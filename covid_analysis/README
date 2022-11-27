@@ -4,3 +4,5 @@ This project analyzed the infection rate and recovery rate of COVID-19.
 The spread of COVID-19 is difficult to predict due to influence of various predictors. 
 This study divided the progress of COVID-19 into five time interval based on several criteria, and obtained the infection rate and recovery rate of COVID-19 in each time interval. 
 Through this study, we were able to quantitatively analyze the past covid-19 data.
+
+Details of this research can be found in Covid19_SIR.pdf file
