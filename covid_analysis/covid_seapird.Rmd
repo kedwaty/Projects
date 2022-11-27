@@ -1,0 +1,314 @@
+---
+title: " Modeling South Africa Omicron variant cases modeling"
+author: "-"
+date: "4/19/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.align = 'center')
+```
+
+```{r library, include=FALSE}
+library(COVID19)
+library(tidyverse)
+library(foreach)
+library(tidyverse)
+library(doParallel)
+library(pomp)
+registerDoParallel()
+library(doRNG)
+registerDoRNG(10)
+set.seed(10)
+```
+
+
+```{r}
+data = cases[cases$location=="United States",]
+data = data %>% filter(date>"2021-11-30") %>% filter(date<"2022-04-10")
+data = data %>% select(c(location, new_cases, total_cases, new_deaths, total_deaths, date))
+data$day = 1:nrow(data)
+data %>% write_csv("dat5.csv")
+```
+
+```{r}
+data = read_csv("dat5.csv")
+data[is.na(data)] = 0
+```
+# POMP - SEAPIRD model
+
+
+$$
+\begin{aligned}
+\Delta N_{AR} &\sim Binomial(A, 1-e^{-\mu_{AR}\Delta t}) \\
+\Delta N_{PI} &\sim Binomial(P, 1-e^{-\mu_{PI}\Delta t}) \\
+\Delta N_{IR} &\sim Binomial(I, 1-e^{-\mu_{IR}\Delta t}) \\
+\Delta N_{ID} &\sim Binomial(I, 1-e^{-\mu_{ID}\Delta t}) \\
+\end{aligned}
+$$
+
+Also, since local government will possibly take procedures to keep virus from spreading, hence, we add three parameters $c_1, c_2, c_3$ into the transition from susceptible from exposed, each measures 50 days of the Markov process. $\Delta N_{SE} \sim Binomial(S, 1-e^{-\beta \times c_i \frac{I+A+P}{N}\Delta t})$.
+
+Another different thing from the SIR model is that we model the weekly reported cases as normal distribution rather than negative binomial. Since our reported cases is fairly large and the mode is around 1925. Thus, we parametrize the reported cases as $Y_{cases} \sim Normal(\rho H, \tau  \rho H (1-\rho))$.
+
+The final step is parameter configuration and initialization. we set our $\Delta_t$ as 1 day, and $S=500000, I=169$ according to our data. We tried to first simulate using a parameter setting: $\beta=1.83,\mu_{IR}=0.02,\mu_{ID}=0.0002,\mu_{EI}=0.86,\alpha=0.67,\mu_AR=0.85,\mu_{PI}=0.81,c_1=1.06,c_2=4.79,c_3=1.45,\rho=0.98,N=500000,\tau=154735$. Another note is that in this part, we used the 7-day average smoothed version of the daily new cases.
+
+```{r SEAPIRD_load}
+
+data %>%
+  transmute(date = day,
+            cases = new_cases,
+            deaths = new_deaths) -> omicron_new
+
+seapird_step <- Csnippet("
+  double dN_SE = rbinom(S,1-exp(-Beta*(I+P+A)/N*dt));
+  double dN_EI = rbinom(E,1-exp(-mu_EI*dt));
+  double dN_PI = rbinom(P,1-exp(-mu_PI*dt));
+  double dN_IR = rbinom(I,1-exp(-mu_IR*dt));
+  double dN_ID = rbinom(I - dN_IR,1-exp(-mu_ID*dt));
+  double dN_AR = rbinom(A,1-exp(-mu_AR*dt));
+  
+  S -= dN_SE;
+  E += dN_SE - dN_EI;
+  P += nearbyint((1 - alpha) * dN_EI) - dN_PI;
+  A += nearbyint(alpha * dN_EI) - dN_AR;
+  I += dN_PI - dN_IR - dN_ID;
+  R += dN_IR + dN_AR;
+  D += dN_ID;
+  H += dN_IR + dN_AR;
+")
+
+seapird_init <- Csnippet("
+  S = N;
+  E = 0;
+  P = 0;
+  A = 0;
+  I = 2000000;
+  R = 0;
+  D = 0;
+  H = 0;
+")
+
+seapird_rmeas <- Csnippet("
+    double mean_cases = rho*H;
+    double sd_cases = sqrt(tau*rho*H*(1-rho)) ;
+    cases =  rnorm(mean_cases,sd_cases) + D;
+    deaths = D;
+    if (cases > 0.0) {
+        cases = nearbyint(cases);
+      } else {
+    cases = 0.0;
+    
+    if(sd_cases == 0){
+    cases = 0.0;
+    }
+}
+")
+
+seapird_dmeas <- Csnippet("
+  double tol = 1.0e-10;
+  double mean_cases = rho*H;
+  double sd_cases = sqrt(tau*rho*H*(1-rho));
+  
+  if(sd_cases == 0){
+    lik = tol;
+  }
+  else{
+    lik = dnorm(cases-deaths, mean_cases, sd_cases, 0);
+  }
+  
+  if (give_log) lik = log(lik);
+  ")
+
+omicronSEAPIRD <- pomp(
+  data = omicron_new, 
+  times = "date",
+  t0 = 0,
+  rprocess=euler(seapird_step, delta.t=1),
+  rinit=seapird_init,
+  rmeasure=seapird_rmeas,
+  dmeasure=seapird_dmeas,
+  accumvars="H",
+  partrans=parameter_trans(
+    log=c("Beta", "mu_AR",
+          "mu_IR", "mu_ID", "mu_PI", "mu_EI", "tau"),
+    logit=c("rho", "alpha")
+  ),
+  obsnames = c("cases", "deaths"),
+  paramnames=c("N","Beta","mu_IR", "mu_ID", "mu_EI", "alpha",
+               "mu_AR", "mu_PI", "rho", "tau"),
+  statenames=c("S","E","P", "A", "I","R","D","H")
+)
+```
+
+```{r SEAPIRD_basic_sim}
+omicronSEAPIRD %>%
+  simulate(
+    params= c(Beta=0.15,mu_IR=0.00008,mu_ID=0.000005,mu_EI=0.85	,alpha=0.1,
+              mu_AR=0.150,mu_PI=0.01,rho=0.996,N=332915074, tau=1000),
+    nsim=5,format="data.frame",include.data=TRUE
+  ) %>%
+  ggplot(aes(x=date,y=cases,group=.id,color=.id=="data"))+
+  geom_line()+
+  guides(color="none") 
+```
+
+```{r include=FALSE}
+fixed_params <- c(N=332915074,tau=1000)
+coef(omicronSEAPIRD,names(fixed_params)) <- fixed_params
+```
+
+Simulation result is poor using this parameter setting. But the shape somehow looks similar, and therefore we conduct a local search and a global search. For the local search, we can see that the log likelihood soon converges, and some of the parameter like $\mu_{EI}, \rho$ also converge quickly. The other parameters seem not converge to a point, but they remain stable in a range. Also, to show how the resulting parameter performs, we put the parameter with the best log likelihood result.
+
+```{r SEAPIRD_local_global}
+# Local Search
+    params= c(Beta=0.15,mu_IR=0.00008,mu_ID=0.000005,mu_EI=0.85	,alpha=0.1,
+              mu_AR=0.150,mu_PI=0.01,rho=0.996,N=332915074, tau=1000)
+omicronSEAPIRD %>%
+  pomp(
+  partrans=parameter_trans(
+    log=c("Beta", "mu_AR",
+          "mu_IR", "mu_ID", "mu_PI", "mu_EI", "tau"),
+    logit=c("rho", "alpha")
+  ),
+  paramnames=c("N","Beta","mu_IR", "mu_ID", "mu_EI", "alpha",
+               "mu_AR", "mu_PI", "rho", "tau"),
+  ) -> omicronSEAPIRD2
+```
+
+```{r}
+bake(file="local_search_seapird.rds",{
+  registerDoRNG(482947940)
+  foreach(i=1:10,.combine=c) %do% {
+    library(pomp)
+    library(tidyverse)
+    omicronSEAPIRD2 %>%
+      mif2(
+        params=params,
+        Np=1000, Nmif=50,
+        cooling.fraction.50=0.5,
+        rw.sd=rw.sd(Beta=0.00001,mu_IR=0.000000001,mu_ID=0.000000001,mu_EI=0.000001, alpha=0.0001,
+              mu_AR=0.00001,mu_PI=0.0001,rho=0.00001)
+      )
+  } -> mifs_local
+}) -> mifs_local
+```
+
+```{r}
+mifs_local %>%
+  traces() %>%
+  melt() %>%
+  ggplot(aes(x = iteration,
+             y = value,
+             group = L1,
+             color = factor(L1)
+             )
+         )+
+  geom_line()+
+  guides(color = FALSE)+
+  facet_wrap(~variable,
+             scales = "free_y")
+```
+
+
+```{r cache=FALSE, include=FALSE, eval=FALSE}
+see = mifs_local %>%
+  traces() %>%
+  melt()
+
+```
+
+```{r}
+foreach(mf=mifs_local,.combine=rbind) %dopar% {
+  library(pomp)
+  library(tidyverse)
+  evals <- replicate(5, logLik(pfilter(mf,Np=1000)))
+  ll <- logmeanexp(evals,se=TRUE)
+  mf %>% coef() %>% bind_rows() %>%
+    bind_cols(loglik=ll[1],loglik.se=ll[2])
+} -> local_results
+
+save(list = c('local_results'),file = 'local.RData')
+```
+
+```{r echo=TRUE}
+set.seed(2062379496)
+runif_design(
+  lower = c(Beta=0.10,mu_IR=0.000001,mu_ID=0.0000001,mu_EI=0.5, alpha=0.01,
+              mu_AR=0.01,mu_PI=0.001,rho=0.97,N=332915074, tau=1000),
+  upper = c(Beta=0.50, mu_IR=0.001,mu_ID=0.0001,mu_EI=2.0, alpha=0.3,
+              mu_AR=0.4,mu_PI=0.1,rho=1,N=332915074, tau=1000),
+nseq=160
+) -> guesses
+```
+
+
+```{r include=FALSE}
+mf1 <- mifs_local[[1]]
+```
+
+
+```{r include=FALSE, eval=FALSE}
+bake(file="global_search.rds",{
+  foreach(guess=iter(guesses,"row"), .combine=rbind) %dopar% {
+  library(pomp)
+  library(tidyverse)
+  mf1 %>%
+    mif2(params=c(guess,fixed_params)) %>%
+    mif2(Nmif=50) -> mf
+  replicate(
+    10,
+    mf %>% pfilter(Np=1000) %>% logLik()
+    ) %>%
+    logmeanexp(se=TRUE) -> ll
+  mf %>% coef() %>% bind_rows() %>%
+    bind_cols(loglik=ll[1],loglik.se=ll[2])
+} -> results
+  results
+}) %>% 
+  filter((is.finite(loglik)))-> global_results
+
+
+save(list = c('global_results'),file = 'global.RData')
+```
+
+```{r}
+ bind_rows(global_results) %>%
+  filter(is.finite(loglik)) %>%
+  arrange(-loglik)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r echo=FALSE}
+measSEIREIR %>%
+simulate(
+params=c(Beta=0.15,mu_IR=0.00008,mu_ID=0.000005,mu_EI=0.85	,alpha=0.1,
+              mu_AR=0.150,mu_PI=0.01,rho=0.996,N=332915074, tau=1000),
+nsim=5,format="data.frame",include.data=TRUE
+) -> sims
+
+sims %>%
+ggplot(aes(x=day,y=reports,group=.id,color=.id=="data"))+
+geom_line()+
+guides(color="none")
+```
+
+
+
+
+
