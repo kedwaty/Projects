@@ -1,0 +1,169 @@
+---
+title: "U3Paper_Option_B"
+author: "youngwoo Kwon"
+date: '2021 4 21 '
+output: pdf_document
+---
+```{r}
+library(dplyr)
+library(tidyr)
+library(arm)
+library(ggplot2)
+```
+
+Summary : We analysed the F.-S. model. We first reproduced their results with logistic regression using glm() and bayesglm(). Then, we used different variables to find a better model compare to the F.-S.'s model. As a result, we got a better model which showed lower AIC and lower deviance than the original model. We plotted the order of original model and preffered model and get the correlation value. Although two models have overlapping variables, the result states that the order of the models might be distinct from each other.
+
+# A : reconstruct measurement models similar to the one used by Finn and Servoss
+
+```{r}
+rawdata <- read.csv("http://dept.stat.lsa.umich.edu/~bbh/s485/data/security_wide.csv")
+rawdata %>% complete.cases() %>% table()
+```
+We have to compare the result of the models later. To facilitate comparison (to avoid the absence of index on one side) I will remove missing values in advance.
+
+```{r}
+rawdata = rawdata %>% na.omit()
+security <- rawdata[c(1,4,5,9,8,15,18,7)]
+head(security)
+```
+We don't have to worry about the missing datas now.
+
+```{r}
+sum_index <- security %>%
+  dplyr::select(-school) %>% rowSums()
+table(sum_index)
+```
+```{r}
+col_index <- security %>%
+  dplyr::select(-school) %>% colSums()
+col_index
+```
+```{r}
+q_38c_data <- security %>% filter(q38c == 1)
+sum(q_38c_data$q38d)/sum(q_38c_data$q38c)
+q_38f_data <- security %>% filter(q38f == 1)
+sum(q_38f_data$q38g)/sum(q_38f_data$q38f)
+```
+
+```{r}
+security0 <- security %>% gather("item", "response", -school)
+head(security0)
+```
+```{r}
+rasch0 <- glm(response ~ item + school -1, family = "binomial", data = security0)
+head(coef(rasch0), 10)
+```
+```{r}
+rasch1 <- bayesglm(response ~ item + school - 1, data = security0)
+head(coef(rasch1), 10)
+```
+
+# B : consider whether simple variations of the model specification might improve it
+
+In a new data, I added the question Q38j 'Enforce a strict dress code'. Question 38c and 38d seem similar. So I removed the Q38d from the data. Q38f 'Use one or more random dog sniffs to check for drugs' did not make sense for me. So I removed Q38f.
+
+
+```{r}
+security_new <- rawdata[c(1,4,9,8,15,18,11)]
+head(security_new)
+```
+```{r}
+security_new0 <- security_new %>% gather("item", "response", -school)
+head(security_new0)
+```
+```{r}
+rasch2 <- glm(response ~ item + school -1, family = "binomial", data = security_new0)
+head(coef(rasch2), 10)
+```
+
+```{r}
+rasch3 <- bayesglm(response ~ item + school - 1, data = security_new0)
+head(coef(rasch3), 10)
+```
+
+# C : compare the alternative Rasch models you will have fit, arriving at a recommended model
+
+```{r}
+rasch0$aic
+rasch1$aic
+rasch2$aic
+rasch3$aic
+```
+
+The model Rasch2 shows the lowest AIC. Rasch0 shows the second-lowest AIC.
+
+```{r}
+rasch0$deviance
+rasch1$deviance
+rasch2$deviance
+rasch3$deviance
+```
+
+Rasch4 has the lowest deviance. Rasch2 has the second-lowest deviance. Comparing the results, it seems the second data set performs the better result. between glm() model and bayesglm() model, I choose the glm() model, the one with lower AIC, since I prefer AIC than deviance when selecting the model.
+
+# D : compare Finn and Servoss?€™s school security measurement to your preferred alternative.
+
+
+```{r}
+rasch2_index <- as.vector(c(schoolid1011=0, coef(rasch2)[-(1:6)]))
+
+rasch2_matrix <- matrix(c(as.vector(security$school), rasch2_index), ncol = 2)
+head(rasch2_matrix)
+```
+
+```{r}
+rasch2_ordered0 <- rasch2_matrix[order(rasch2_matrix[,2]),]
+head(rasch2_ordered0)
+```
+This is the order of the school using rasch2, glm() model with security_new data.
+
+```{r}
+rasch2_ordered1 = cbind(rasch2_ordered0, c(1:612))
+rasch2_ordered2 = rasch2_ordered1[order(rasch2_ordered1[,1]),]
+head(rasch2_ordered2)
+```
+The first column of this matrix is school names. The second column is their glm() coefficients. The third column is their order.
+
+Let's repeat this procedure for the F.-S. model, rasch0.
+
+```{r}
+rasch0_index <- as.vector(c(schoolid1011=0, coef(rasch0)[-(1:7)]))
+rasch0_matrix <- matrix(c(as.vector(security$school), rasch0_index), ncol = 2)
+rasch0_ordered0 <- rasch0_matrix[order(rasch0_matrix[,2]),]
+rasch0_ordered1 = cbind(rasch0_ordered0, c(1:612))
+rasch0_ordered2 = rasch0_ordered1[order(rasch0_ordered1[,1]),]
+head(rasch0_ordered2)
+```
+Let's combine the order.
+
+```{r}
+rasch_comp <- cbind(Rasch0 = as.numeric(rasch0_ordered2[,3]), Rasch2 = as.numeric(rasch2_ordered2[,3]))
+rasch_comp1 <- as.data.frame(rasch_comp[order(rasch_comp[,1]),])
+head(rasch_comp)
+head(rasch_comp1)
+```
+The first row is index from the F.-S. model and the second row is index from the fixed (preffered) model.
+
+```{r}
+  ggplot(rasch_comp1, aes(x = Rasch0)) + 
+  geom_line(aes(y = Rasch0, colour = "Rasch0")) +
+  geom_point(aes(y = Rasch2, colour = "Rasch2")) + 
+  labs(y = "index", x = "Rasch0_order")
+```
+
+
+```{r}
+cor(x = rasch_comp1$Rasch0, y = rasch_comp1$Rasch2)
+```
+
+
+
+
+
+
+
+
+
+
+
+

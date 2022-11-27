@@ -1,0 +1,324 @@
+---
+title: "U3Paper_Option_B"
+author: "youngwoo Kwon"
+date: '2021 4 21 '
+output: pdf_document
+---
+```{r}
+library(dplyr)
+library(tidyr)
+library(arm)
+library(ggplot2)
+library(matrixStats)
+```
+
+Summary : We analysed the $F.-S.$ model. We first reproduced their results with logistic regression using glm() and bayesglm(). Then, we used different variables to find a better model compare to the $F.-S.$'s model. As a result, we got a better model which showed lower AIC and lower deviance than the original model. We plotted the order of original model and preffered model and get the correlation value. Although two models have overlapping variables, the result states that the order of the models might be distinct from each other. We tried to replace the missing values. The first model replaced the missing value using mean value for the variable form whole data set, and the second model replaced the missing value using mean value for the variabl from the data set that has equal 'BYURBAN' value with the school contained missing value. Results are represented as visual graphs.
+
+# A : reconstruct measurement models similar to the one used by Finn and Servoss
+
+```{r}
+rawdata <- read.csv("http://dept.stat.lsa.umich.edu/~bbh/s485/data/security_wide.csv")
+rawdata %>% complete.cases() %>% table()
+```
+We have to compare the result of the models later. To facilitate comparison (to avoid the absence of index on one side) I will remove missing values in advance.
+
+```{r}
+rawdata = rawdata %>% na.omit()
+security <- rawdata[c(1,4,5,9,8,15,18,7)]
+head(security)
+```
+We don't have to worry about the missing datas now.
+
+```{r}
+sum_index <- security %>%
+  dplyr::select(-school) %>% rowSums()
+table(sum_index)
+```
+```{r}
+col_index <- security %>%
+  dplyr::select(-school) %>% colSums()
+col_index
+```
+```{r}
+q_38c_data <- security %>% filter(q38c == 1)
+sum(q_38c_data$q38d)/sum(q_38c_data$q38c)
+q_38f_data <- security %>% filter(q38f == 1)
+sum(q_38f_data$q38g)/sum(q_38f_data$q38f)
+```
+
+```{r}
+security0 <- security %>% gather("item", "response", -school)
+head(security0)
+```
+```{r}
+rasch0 <- glm(response ~ item + school -1, family = "binomial", data = security0)
+head(coef(rasch0), 10)
+```
+```{r}
+rasch1 <- bayesglm(response ~ item + school - 1, data = security0)
+head(coef(rasch1), 10)
+```
+
+# B : consider whether simple variations of the model specification might improve it
+
+In a new data, I added the question Q38j 'Enforce a strict dress code'. Question 38c and 38d seem similar. So I removed the Q38d from the data. Q38f 'Use one or more random dog sniffs to check for drugs' did not make sense for me. So I removed Q38f.
+
+
+```{r}
+security_new <- rawdata[c(1,4,9,8,15,18,11)]
+head(security_new)
+```
+```{r}
+security_new0 <- security_new %>% gather("item", "response", -school)
+head(security_new0)
+```
+```{r}
+rasch2 <- glm(response ~ item + school -1, family = "binomial", data = security_new0)
+head(coef(rasch2), 10)
+```
+
+```{r}
+rasch3 <- bayesglm(response ~ item + school - 1, data = security_new0)
+head(coef(rasch3), 10)
+```
+
+# C : compare the alternative Rasch models you will have fit, arriving at a recommended model
+
+```{r}
+rasch0$aic
+rasch1$aic
+rasch2$aic
+rasch3$aic
+```
+
+The model Rasch2 shows the lowest AIC. Rasch0 shows the second lowest AIC.
+
+```{r}
+rasch0$deviance
+rasch1$deviance
+rasch2$deviance
+rasch3$deviance
+```
+
+Rasch4 has the lowest deviance. Rasch2 has the second lowest deviance. Comparing the results, it seems the second data set performs the better result. between glm() model and bayesglm() model, I choose the glm() model, the one with lower AIC, since I prefer AIC than deviance when selecting the model.
+
+# D : compare Finn and Servoss. The school security measurement to your preferred alternative.
+
+```{r}
+rasch2_index <- as.vector(c(schoolid1011=0, coef(rasch2)[-(1:6)]))
+
+rasch2_matrix <- matrix(c(as.vector(security$school), rasch2_index), ncol = 2)
+head(rasch2_matrix)
+```
+
+```{r}
+rasch2_ordered0 <- rasch2_matrix[order(rasch2_matrix[,2]),]
+head(rasch2_ordered0)
+```
+
+This is the order of the school using rasch2, glm() model with security new data.
+
+```{r}
+rasch2_ordered1 = cbind(rasch2_ordered0, c(1:612))
+rasch2_ordered2 = rasch2_ordered1[order(rasch2_ordered1[,1]),]
+head(rasch2_ordered2)
+```
+
+The first column of this matrix is school names. The second column is their glm() coefficients. The third column is their order.
+
+Let's repeat this procedure for the $F.-S.$ model, rasch0.
+
+```{r}
+rasch0_index <- as.vector(c(schoolid1011=0, coef(rasch0)[-(1:7)]))
+rasch0_matrix <- matrix(c(as.vector(security$school), rasch0_index), ncol = 2)
+rasch0_ordered0 <- rasch0_matrix[order(rasch0_matrix[,2]),]
+rasch0_ordered1 = cbind(rasch0_ordered0, c(1:612))
+rasch0_ordered2 = rasch0_ordered1[order(rasch0_ordered1[,1]),]
+head(rasch0_ordered2)
+```
+
+Let's combine the order.
+
+```{r}
+rasch_comp <- cbind(Rasch0 = as.numeric(rasch0_ordered2[,3]), Rasch2 = as.numeric(rasch2_ordered2[,3]))
+rasch_comp1 <- as.data.frame(rasch_comp[order(rasch_comp[,1]),])
+head(rasch_comp)
+head(rasch_comp1)
+```
+
+The first row is index from the $F.-S.$ model and the second row is index from the fixed (preffered) model.
+
+```{r}
+  ggplot(rasch_comp1, aes(x = Rasch0)) + 
+  geom_line(aes(y = Rasch0, colour = "Rasch0")) +
+  geom_point(aes(y = Rasch2, colour = "Rasch2")) + 
+  labs(y = "index", x = "Rasch0_order")
+```
+
+
+```{r}
+cor(x = rasch_comp1$Rasch0, y = rasch_comp1$Rasch2)
+```
+
+
+# E : For the Version 2 of the paper
+
+```{r}
+rawdata0 <- as.data.frame(read.csv("http://dept.stat.lsa.umich.edu/~bbh/s485/data/security_wide.csv"))
+rawdata1 <- as.data.frame(read.csv("http://dept.stat.lsa.umich.edu/~bbh/s485/data/security_school_vars.csv"))
+```
+
+```{r}
+rawdata0_new = rawdata0 %>% dplyr::left_join(rawdata1)
+head(rawdata0_new)
+```
+
+We can use new variables to estimate the missing values. We will now generate two models. The first model is similar to our preferred model. It uses the glm() for our new data set, but it replaces the missing varaibles to the mean value. (For example, if itemq38c is missed for some response, instead of just remove the data like rasch2 model, its itemq38c value would be total mean value of itemq38c).
+
+```{r}
+rawdata0_new_df = as.data.frame(rawdata0_new[c(1,4,9,8,15,18,11)])
+newdata_mean_1 <-  cbind(rawdata0_new[,1], as_tibble(sapply(rawdata0_new_df[,-1], function(x) ifelse(is.na(x), (mean(x, na.rm = TRUE)), x))))
+
+names(newdata_mean_1)[1] <- "school"
+head(newdata_mean_1)
+```
+
+```{r}
+newdata_mean_2 <- newdata_mean_1 %>% gather("item", "response", -school)
+head(newdata_mean_2)
+```
+
+```{r}
+nrow(rawdata0_new_df %>% na.omit())
+nrow(newdata_mean_1 %>% na.omit())
+```
+
+So there are 24 values that have been replaced into the mean value.
+
+```{r}
+select_na  <-  cbind(rawdata0_new[,1], as_tibble(sapply(rawdata0_new_df[,-1], function(x) ifelse(is.na(x), (-20), 0))))
+names(select_na)[1] <- "school"
+select_na  %>% gather("item", "response", -school) %>% filter(response == -20)
+```
+
+Those are the schools and items that had missing responses. There are 32 rows, because, some schools like id3572 had more than 2 items that are missing.
+
+
+Now let's make an data set that replaces the the responses based on the additional independent variables. We will use urban as a new independent variable that to weaken the MAR assumption
+
+```{r}
+nrow(rawdata0_new %>% filter(BYURBAN == 1))
+nrow(rawdata0_new %>% filter(BYURBAN == 2))
+nrow(rawdata0_new %>% filter(BYURBAN == 3))
+nrow(rawdata0_new %>% filter(BYURBAN != 1 & BYURBAN != 2 & BYURBAN != 3))
+```
+
+So we can check that all the BYURBAN value in the dataset are 1,2 or 3.
+
+We will seperate the data into three parts. One per BYURBAN value.
+
+```{r}
+data_urban1 = (rawdata0_new %>% filter(BYURBAN == 1))
+data_urban2 = (rawdata0_new %>% filter(BYURBAN == 2))
+data_urban3 = (rawdata0_new %>% filter(BYURBAN == 3))
+```
+
+And replace NA into mean values.
+
+```{r}
+data_urban1_df = as.data.frame(data_urban1)
+data_urban1_mean <-  cbind(data_urban1[,1], as_tibble(sapply(data_urban1_df[,-1], function(x) ifelse(is.na(x), (mean(x, na.rm = TRUE)), x))))
+names(data_urban1_mean)[1] <- "school"
+```
+
+```{r}
+data_urban2_df = as.data.frame(data_urban2)
+data_urban2_mean <-  cbind(data_urban2[,1], as_tibble(sapply(data_urban2_df[,-1], function(x) ifelse(is.na(x), (mean(x, na.rm = TRUE)), x))))
+names(data_urban2_mean)[1] <- "school"
+```
+
+```{r}
+data_urban3_df = as.data.frame(data_urban3)
+data_urban3_mean <-  cbind(data_urban3[,1], as_tibble(sapply(data_urban3_df[,-1], function(x) ifelse(is.na(x), (mean(x, na.rm = TRUE)), x))))
+names(data_urban3_mean)[1] <- "school"
+```
+
+Combine them together
+
+```{r}
+newdata_mean_3 = rbind(data_urban1_mean[c(1,4,9,8,15,18,11)], data_urban2_mean[c(1,4,9,8,15,18,11)], data_urban3_mean[c(1,4,9,8,15,18,11)])
+
+newdata_mean_4 <- newdata_mean_3 %>% gather("item", "response", -school)
+head(newdata_mean_4)
+```
+
+So now we have two data sets, newdatamean2 and newdatamean4.
+
+Based on these data, we will generate models.
+
+```{r}
+rasch2_1 <- glm(response ~ item + school -1, family = "binomial", data = newdata_mean_2)
+head(coef(rasch2_1), 10)
+```
+
+```{r}
+rasch2_2 <- glm(response ~ item + school -1, family = "binomial", data = newdata_mean_4)
+head(coef(rasch2_2), 10)
+```
+
+```{r}
+rasch2_1$aic
+rasch2_2$aic
+rasch2_1$deviance
+rasch2_2$deviance
+```
+
+The only difference between two models is how we replaced the NA values. That is, most of the data are not affected. So the AIC and deviance between models are almost equal.
+
+```{r}
+rasch2_1_index <- as.vector(c(schoolid1011=0, coef(rasch2_1)[-(1:6)]))
+rasch2_1_matrix <- matrix(c(as.vector(rawdata0_new$school), rasch2_1_index), ncol = 2)
+rasch2_1_ordered0 <- rasch2_1_matrix[order(rasch2_1_matrix[,2]),]
+rasch2_1_ordered1 = cbind(rasch2_1_ordered0, c(1:656))
+rasch2_1_ordered2 = rasch2_1_ordered1[order(rasch2_1_ordered1[,1]),]
+```
+
+```{r}
+rasch2_2_index <- as.vector(c(schoolid1011=0, coef(rasch2_2)[-(1:6)]))
+rasch2_2_matrix <- matrix(c(as.vector(rawdata0_new$school), rasch2_2_index), ncol = 2)
+rasch2_2_ordered0 <- rasch2_2_matrix[order(rasch2_2_matrix[,2]),]
+rasch2_2_ordered1 = cbind(rasch2_2_ordered0, c(1:656))
+rasch2_2_ordered2 = rasch2_2_ordered1[order(rasch2_2_ordered1[,1]),]
+```
+
+```{r}
+rasch_comp2 <- cbind(Rasch2_1 = as.numeric(rasch2_1_ordered2[,3]), Rasch2_2 = as.numeric(rasch2_2_ordered2[,3]))
+rasch_comp3 <- as.data.frame(rasch_comp2[order(rasch_comp2[,1]),])
+head(rasch_comp2)
+head(rasch_comp3)
+```
+
+```{r}
+ggplot(rasch_comp3, aes(x = Rasch2_1)) + 
+  geom_line(aes(y = Rasch2_1, colour = "Rasch2_1")) +
+  geom_point(aes(y = Rasch2_2, colour = "Rasch2_2")) + 
+  labs(y = "index", x = "Rasch2_1_order")
+```
+
+```{r}
+cor(x = rasch_comp3$Rasch2_1, y = rasch_comp3$Rasch2_2)
+```
+
+```{r}
+head(rawdata0_new %>% filter(school == "id2241"))
+```
+
+```{r}
+rasch2_1_ordered2 %>% as_tibble() %>% filter(rasch2_1_ordered2[,1] == "id2241")
+rasch2_2_ordered2 %>% as_tibble() %>% filter(rasch2_1_ordered2[,1] == "id2241")
+```
+
+```{r}
+rasch2_1_ordered2 %>% as_tibble() %>% filter(rasch2_1_ordered2[,1] == "id2342")
+rasch2_2_ordered2 %>% as_tibble() %>% filter(rasch2_1_ordered2[,1] == "id2342")
+```
