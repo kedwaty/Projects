@@ -1,0 +1,65 @@
+```{r}
+options(digits = 22)
+
+##higher precision needed (64++ decimal)
+library(polynom)
+library(elliptic)
+library(Rmpfr)
+
+#Constant
+n = 3
+n0 = 2*n-1
+RangeHigh = 1
+RangeLow = -1
+u = c()
+
+#w(x) function
+integrand = function(x,k){
+  exp(x)*x^k
+}
+
+#u_k values
+for (j in 0:n0){
+  integrand2 = function(x){
+    integrand(x,j)
+  }
+u = c(u, integrateR(integrand2, -1, mpfr(1, 32), rel.tol = 1e-32, verbose = TRUE)$value)
+}
+```
+```{r}
+new_u = c()
+for(i in 0 : n0 + 1){
+new_u = c(new_u, as.numeric(sub("\'mpfr1\' ", "", capture.output(u[i]@.Data[[1]]))))
+}
+```
+
+```{r}
+#vector for the matrix
+u_data = c()
+for(i in 1:n){
+  FirstCol = i
+  EndCol = n+i-1
+  u_data[(n*i-n+1):(n*i)] <- new_u[FirstCol:EndCol]
+}
+A=matrix(u_data, nrow = n, ncol = n)
+```
+
+```{r}
+#vector for the right part of the equation
+FirstCol = n + 1
+EndCol = 2*n
+b = new_u[FirstCol:EndCol]
+
+#Output
+k = solve(A,b)
+k = c(k,1)
+k
+Q_eq = polyroot(k)
+Q_eq
+plot(Q_eq)
+```
+
+```{r}
+x = 1
+```
+
