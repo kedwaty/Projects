@@ -1,0 +1,156 @@
+---
+title: "Unit1_Paper1_Version2"
+author: "youngwoo Kwon"
+date: '2021 2 20'
+output: pdf_document
+---
+#Overview description\
+The analysis used Wilson Confidence interval to check the 95% confidence interval of positivity rate for each week.\
+The test population and positivity rate showed little negative relationship with correlation -0.1843\
+The test population before two weeks and positivity rate showed more strong negative relationship with correlation -0.4270.\
+
+Separted the data into two parts, which test population is less than 5000 and larger than 5000, we cannot reject the hypothesis "Two populations have different positivity rate" since average positivity rate for both samples were in the 95% confidence interval of the total positivity rate. However, we can reject the hypothesis "Two population have different positivity rate" for the data which test population before two weeks were less than 5000 and larger than 5000, since the mean positivity rate for the sample 'population larger than 5000' was out of the 95% confidence interval of the total positivity rate.
+
+Seperated the data into four parts, divided 19 weeks into 5/5/5/4 weeks, all the intervals failed the log likelihood test for 95% confidence level. Also, using chi square test, we can check the p value for each test was less than 2.2e-16.
+
+Merging the intervals into two intervals, 19 weeks into 10/9 weeks, two intervals also failed the log likelihood test for 95% confidence level. Also, using chi square test, we can check the p value fore each test was less than 2.2e-16.
+
+
+#0.Header
+```{r}
+library(ggplot2)
+library(dplyr)
+mydata = read.csv("http://dept.stat.lsa.umich.edu/~bbh/s485/data/covidTestsFA2020.csv")
+mydata
+```
+
+#1.Wilson Confidence Interval for each week\
+#First column is the lowerbound for pos_rate and Second column is the upperbound for pos_rate for each week
+```{r}
+Weeks = 1:19
+k = 1.96
+n = mydata[,3]
+phat = mydata[,2]
+CI_Wilson = c((n*phat+k^2/2)/(n+k^2) - k*sqrt(n)/(n+k^2)*sqrt(phat*(1-phat)+k^2/(4*n)),(n*phat+k^2/2)/(n+k^2) + k*sqrt(n)/(n+k^2)*sqrt(phat*(1-phat)+k^2/(4*n))) 
+CI_Wilson_matrix = matrix(data = CI_Wilson, ncol = 2)
+CI_Wilson_matrix
+```
+
+#Graph of the 95% Wilson Confidence Interval
+```{r}
+Final_data = data.frame(label = 1:19, lower_bound = CI_Wilson_matrix[,1], pos_rate = phat, upper_bound = CI_Wilson_matrix[,2])
+mdf_Fianl_data = reshape2::melt(Final_data, id.var = "label")
+```
+
+```{r}
+ggplot(data = mdf_Fianl_data , aes(label, value, colour = variable)) +
+  geom_point() + 
+  geom_line() + 
+  labs(title = "95% Wilson Confidence Interval", x = "Weeks", y = "Probability")
+```
+
+#2.relationship between n_tests and pos_rate
+```{r}
+ggplot(data = mydata, mapping = aes(x = n_tests, y = pos_rate)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y~x, se = FALSE)
+```
+
+#relationship between n_tests of last two weeks and pos_rate
+```{r}
+n_2week_ago = (n[-c(18,19)]+n[-c(1,19)])/2
+phat_new = phat[-c(1,2)]
+twoweekdata = data.frame(pos_rate = phat_new, n_tests = n_2week_ago)
+ggplot(data = twoweekdata, mapping = aes(x = n_tests, y = pos_rate)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y~x, se = FALSE) 
+
+```
+
+#Slope and correlation of the pos_rate and n_tests
+```{r}
+lm(pos_rate~n_tests, data = mydata)
+lm(pos_rate~n_tests, data = twoweekdata)
+cor(mydata$pos_rate, mydata$n_tests)
+cor(twoweekdata$pos_rate, twoweekdata$n_tests)
+```
+
+#Quantile and 95% Confidence Interval of phat
+```{r}
+confint(lm(phat~1), level = 0.95)
+```
+
+#Difference between phat for (n_tests) <= 5000 and (n_tests) > 5000
+```{r}
+nhigh_data = mydata %>%
+  filter(n_tests > 5000)
+nlow_data = mydata %>%
+  filter(n_tests <= 5000)
+mean(nhigh_data[,2])
+mean(nlow_data[,2])
+```
+
+#Difference between phat for (past two weeks n_tests) <= 5000 and (past two weeks n_tests) > 5000
+```{r}
+n_2week_high_data = twoweekdata %>%
+  filter(n_tests > 5000)
+n_2week_low_data = twoweekdata %>%
+  filter(n_tests <= 5000)
+mean(n_2week_high_data[,1])
+mean(n_2week_low_data[,1])
+```
+
+#3.LR test - positivity rate was constant within each 4 time intervals\
+#H_0 : p = p0 where p0 is mean(pos_rate) for the interval\
+#Checks the hypothesis for each week
+```{r}
+Firstmydata = mydata[1:5, ]
+Secondmydata = mydata[6:10, ]
+Thirdmydata = mydata[11:15, ]
+Fourthmydata = mydata[16:19, ]
+
+First_phat = rep(mean(Firstmydata[,2]), length(Firstmydata[,2]))
+Second_phat = rep(mean(Secondmydata[,2]), length(Secondmydata[,2]))
+Third_phat = rep(mean(Thirdmydata[,2]), length(Thirdmydata[,2]))
+Fourth_phat = rep(mean(Fourthmydata[,2]), length(Fourthmydata[,2]))
+
+log_lik = function(n,p, phat){
+  Logic = (2*(dbinom(round(n*phat), n, phat, log=TRUE) - dbinom(round(n*phat), n, p, log=TRUE)) - qchisq(0.95,1) > 0)
+  return(Logic)
+}
+log_lik(Firstmydata[,3], Firstmydata[,2], First_phat)
+log_lik(Secondmydata[,3], Secondmydata[,2], Second_phat)
+log_lik(Thirdmydata[,3], Thirdmydata[,2], Third_phat)
+log_lik(Fourthmydata[,3], Fourthmydata[,2], Fourth_phat)
+```
+
+#LR test - positivity rate was different across at least two of these intervals\
+#Merge the interval and check the null hypothesis again.
+```{r}
+FirstMergemydata = mydata[1:10, ]
+FirstMerge_phat = rep(mean(FirstMergemydata[,2]), length(FirstMergemydata[,2]))
+log_lik(FirstMergemydata[,3],FirstMergemydata[,2], FirstMerge_phat)
+
+SecondMergemydata = mydata[11:19, ]
+SecondMerge_phat = rep(mean(SecondMergemydata[,2]), length(SecondMergemydata[,2]))
+log_lik(SecondMergemydata[,3],SecondMergemydata[,2], SecondMerge_phat)
+```
+
+#p-value from chi-square test for each interval
+```{r}
+chi_test = function(n,p, phat){
+  pval = chisq.test(n, p = p, rescale.p = TRUE)
+  return(pval)
+}
+
+chi_test(Firstmydata[,3], Firstmydata[,2], First_phat)
+chi_test(Secondmydata[,3], Secondmydata[,2], Second_phat)
+chi_test(Thirdmydata[,3], Thirdmydata[,2], Third_phat)
+chi_test(Fourthmydata[,3], Fourthmydata[,2], Fourth_phat)
+chi_test(FirstMergemydata[,3],FirstMergemydata[,2], FirstMerge_phat)
+chi_test(SecondMergemydata[,3],SecondMergemydata[,2], SecondMerge_phat)
+```
+
+
+
+
