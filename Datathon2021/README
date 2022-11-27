@@ -1,3 +1,32 @@
-All the data for Datathon 2021 is saved in
+All the codes for Datathon 2021 is saved in
 https://drive.google.com/drive/folders/0ADFAyWK0CxwoUk9PVA
-Please visit this google drive to check these projects
+
+The result for the project can be found in
+https://devpost.com/software/goldman-sachs-challenge-piof9q#updates
+
+Inspiration
+The stock market is a complicated and complex system. All information affects the market, and the environmental data is not an exception. The Goldman Sachs Challenge inspired us because this was a chance for how the change of one information can affects the company stock prices.
+
+What it does
+The project calculates the relationship between the environment indicator and the company industry. Specifically, we wanted to figure out whether the stock price of certain companies would change if carbon dioxide has been increased. The oil and gas integrated industry showed the highest correlation and retailing showed the highest negative correlation with carbon dioxide among the industries. Also, the project predicts the stock value of the industry that is highly correlated to the environment data by the environmental indicators. Based on the analysis, we did a regression that predicts the stock price at the end of the month of the certain industry using indicators data and the stock price at the start of the month. Although the analysis was successful, the regression was not that successful.
+
+How we built it
+We first grouped the companies by industries. Since each company has a different impact on their industry, we wanted to weigh the average stock price for each year of the companies. So we created an industry price that represents the industry's standardized stock price for each year by calculating the weighted arithmetic mean of the industry's stock prices using their market cap. We also modified the environment data by grouping them by the year and the indicators and calculate the mean of the environment values. We merged the industry price and the environment data for every year and calculate the correlation coefficients to conclude which industries are positively or negatively correlated to the certain indicator.
+
+Based on the correlation, we selected the industry that seems to be most related to the environment. We did a regression using SVM regression with stock value at the end of the month as a response and stock value at the start of the month and other environmental indicators values as variables.
+
+Challenges we ran into
+The most challenging part of the project was how to combine a totally different data set into one data set. It could be done in many ways, but we decided to merge the data by the year after we did a sufficient manipulation to both data set. Another Challenge we met was how to deal with the missing values in the data sets. At first, we just tried to ignore the missing values, but in the process of calculating the correlation, we realized that those can cause serious problems. So we carefully considered the missing values and the industries with too little data.
+
+We also had to deal with the time term. Since the term of the environmental data is one year and the stock market data is one day, we have to find an appropriate term that we can both provide enough data for the modeling and precise prediction from the long-term environmental data. We tried both year and month as our term for analysis and modeling and decided year as a time unit for the analysis and month as a time unit of the regression.
+
+At the end of the project, we also countered another problem that our regression model did not work as we expected. Even though the industry we selected showed a high correlation to the environment, our prediction model showed less SVM score than we expected. Since the stock market is a highly complex system, we accepted this result and concluded there are industries tied together with the environments, such as the oil industry, but it is difficult to predict the stock values of the industry using those environmental data because the stock market is complex and the environmental data is just factors that affect the industry.
+
+Accomplishments that we're proud of
+We successfully combined the environment data with the stock market data, and what industries are actually related to the change of the environment. We also provided the model that predicts the stock price of a certain industry by the change of the environment value. In addition, we achieved perfect teamwork and presented effective strategies to solve a difficult open-ended problem.
+
+What we learned
+We learned how to clean and merging the large data sets while preventing the data from data leakage and selecting the data we want to analyze We also learned how to summarize the large data set, and, learned how to work as a team for a time-limited project and to deal with very large data sets. Also, we had to analyze the result even if the result we got from the data are not what we expected.
+
+What's next for Goldman Sachs Challenge
+Find an opportunity to practice python coding and deal with various data.
