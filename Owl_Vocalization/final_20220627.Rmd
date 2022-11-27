@@ -1,0 +1,786 @@
+
+---
+title: "Owl Vocalization data analysis"
+date: '2022-06-17'
+author: "Youngwoo Kwon"
+output:
+  html_document:
+    theme: united
+    toc: yes
+    toc_float: true
+    highlight: tango
+---
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(readxl)
+library(tidyverse)
+library(MASS)
+library(ggplot2)
+library(plotly)
+library(robustbase)
+```
+
+#### This report analyzed the relationship between the behavior of owls and the data of Owl vocalization data. 
+
+#### We selected the useful parameters, and constructed new parameters in the vocalization data that might be significant for different behaviors. 
+
+#### We signified one specific behavior, chuckles, which had distinctly different vocalization from other behaviors. Also, we specified the name of each chuckles vocalization data; Rupert, Rupert with towel, Savannah Georgia female.
+
+#### We selected two owls, owl #1 and #55, accounted for the about one third of the data.
+
+#### We tried student's t-test and Welch's t-test to test the hypothesis whether the selected parameters are unique or not during specific behaviors in selected groups. 
+
+#### We displayed QQ-plot to check whether the data are following normal assumptions. 
+
+#### We tried the permutation test to check whether the selected parameters are unique or not during specific behaviors in selected groups even if the total data is not following the normal assumption. 
+
+#### Overall, in many cases, the parameter pulsrate was significant between two data groups which consisted of chuckles / not chuckles . Two other parameter of interest, duration and bandwidth, were not significant in many cases. Detailed results can be found in Section 5. 
+
+### Data cleaning
+
+```{r}
+colname2 = c("Begin Time (s)_s", "End Time (s)_s", "Low Freq (Hz)_s", "High Freq (Hz)_s", "Center Freq (Hz)_s", "Q1 Freq (Hz)_s", "Q3 Freq (Hz)_s", "IQR BW (Hz)_s", "IQR Dur (s)_s", "BW 90% (Hz)_s","Center Time (s)_s", "Q1 Time (s)_s", "Q3 Time (s)_s", "Peak Time (s)_s", "Max Time (s)_s", "Peak Freq (Hz)_s", "Delta Freq (Hz)_s",  "Delta Time (s)_s", "Freq 5% (Hz)_s", "Freq 95% (Hz)_s", "Time 95% (s)_w",  "Time 5% (s)_s", "Dur 90% (s)_s", "Age_s", "Sex_s", "Imprint status_s", "to human_s", "hoot_s", "Owl ID #_s", "Units (notes)", "Period", "Favored", "chuckles")
+```
+
+```{r}
+dat_0 = read_excel("data/data_2.xlsx")[-350,]
+```
+
+```{r}
+dat_1 = dat_0[,colname2]
+```
+
+```{r}
+dat_2 = dat_1
+```
+
+```{r}
+cor = c()
+for(i in 1:ncol(dat_2)){
+  coln = colnames(dat_2)[i]
+  dat_2[,i] = as.numeric(pull(dat_2, coln))
+}
+dat_2[,25] = as.factor(pull(dat_2, colnames(dat_2)[25]))
+```
+
+```{r}
+rep = c(rep(0,344) ,1,1,1,1,1)
+dat_2$response = rep
+rep2 = c(rep(0,344), 0,0,1,1,0)
+dat_2$chuckles = rep2
+```
+
+```{r}
+dat_2$duration = dat_2$`End Time (s)_s` - dat_2$`Begin Time (s)_s`
+dat_2$pulsepertime = dat_2$`Units (notes)` /dat_2$duration
+dat_2$pulserate = dat_2$duration / dat_2$`Units (notes)`
+dat_2$halftime = (dat_2$`Q3 Time (s)_s` - dat_2$`Q1 Time (s)_s`) / dat_2$duration
+```
+
+```{r}
+dat_ch = dat_2 %>% filter(chuckles == 1)
+dat_nch1 = dat_2 %>% filter(response == 1) %>% filter(chuckles == 0) %>% filter(`Owl ID #_s` == 1)
+dat_nch2 = dat_2 %>% filter(response == 1) %>% filter(chuckles == 0) %>% filter(`Owl ID #_s` == 55)
+```
+
+```{r}
+dat_id1 = dat_2 %>% filter(response == 0) %>% filter(`Units (notes)` > 1) %>% filter(`Owl ID #_s` == 1)
+dat_id2 = dat_2 %>% filter(response == 0) %>% filter(`Units (notes)` > 1) %>% filter(`Owl ID #_s` == 55)
+
+dat_4 = dat_2 %>% filter(response == 1) %>% filter(chuckles == 0)
+```
+
+## 1 Student's t-test
+
+### 1.1 Rupert vs. all ID#1 vocalizations where units >1
+
+```{r}
+t.test(dat_ch$pulserate, dat_id1$pulserate, var.equal = TRUE)
+t.test(dat_ch$duration, dat_id1$duration, var.equal = TRUE)
+t.test(dat_ch$`IQR BW (Hz)_s`, dat_id1$`IQR BW (Hz)_s`, var.equal = TRUE)
+```
+
+### 1.2 Rupert with towel vs Savannah Georgia female
+
+```{r}
+t.test(dat_nch1$pulserate, dat_nch2$pulserate, var.equal = TRUE)
+t.test(dat_nch1$duration, dat_nch2$duration, var.equal = TRUE)
+t.test(dat_nch1$`IQR BW (Hz)_s`, dat_nch2$`IQR BW (Hz)_s`, var.equal = TRUE)
+```
+
+### 1.3  Rupert with towel vs all #1 vocalizations where units >1
+
+```{r}
+t.test(dat_nch1$pulserate, dat_id1$pulserate, var.equal = TRUE)
+t.test(dat_nch1$duration, dat_id1$duration, var.equal = TRUE)
+t.test(dat_nch1$`IQR BW (Hz)_s`, dat_id1$`IQR BW (Hz)_s`, var.equal = TRUE)
+```
+
+### 1.4 Savannah Georgia female vs all Savannah Georgia female vocalizations where Units>1.
+
+```{r}
+t.test(dat_nch2$pulserate, dat_id2$pulserate, var.equal = TRUE)
+t.test(dat_nch2$duration, dat_id2$duration, var.equal = TRUE)
+t.test(dat_nch2$`IQR BW (Hz)_s`, dat_id2$`IQR BW (Hz)_s`, var.equal = TRUE)
+```
+
+### 1.5 Rupert vs. ((all ID #1 and all ID #55) where units > 1)
+
+```{r}
+dat_3 = dat_2 %>% filter(response == 0) %>% filter(`Owl ID #_s` %in% c(1, 55)) %>% filter(`Units (notes)` > 1)
+
+t.test(dat_ch$pulserate, dat_3$pulserate, var.equal = TRUE)
+t.test(dat_ch$duration, dat_3$duration, var.equal = TRUE)
+t.test(dat_ch$`IQR BW (Hz)_s`, dat_3$`IQR BW (Hz)_s`, var.equal = TRUE)
+```
+
+### 1.6 Rupert vs Savannah Gerogia female
+
+```{r}
+t.test(dat_ch$pulserate, dat_nch2$pulserate, var.equal = TRUE)
+t.test(dat_ch$duration, dat_nch2$duration, var.equal = TRUE)
+t.test(dat_ch$`IQR BW (Hz)_s`, dat_nch2$`IQR BW (Hz)_s`, var.equal = TRUE)
+```
+
+### 1.7 Rupert vs Rupert with towel
+
+```{r}
+t.test(dat_ch$pulserate, dat_nch1$pulserate, var.equal = TRUE)
+t.test(dat_ch$duration, dat_nch1$duration, var.equal = TRUE)
+#t.test(dat_ch$`IQR BW (Hz)_s`, dat_nch1$`IQR BW (Hz)_s`, var.equal = TRUE)
+```
+
+### 1.8 Savannah Georgia female vs ((all ID #1 and all ID #55) where units > 1)
+
+```{r}
+t.test(dat_nch2$pulserate, dat_3$pulserate, var.equal = TRUE)
+t.test(dat_nch2$duration, dat_3$duration, var.equal = TRUE)
+t.test(dat_nch2$`IQR BW (Hz)_s`, dat_3$`IQR BW (Hz)_s`, var.equal = TRUE)
+```
+
+
+## 2. Graphs
+
+```{r}
+dat_3[,29] = as.factor(pull(dat_3, colnames(dat_3)[29]))
+dat_ch[,29] = as.factor(pull(dat_ch, colnames(dat_ch)[29]))
+dat_4[,29] = as.factor(pull(dat_4, colnames(dat_4)[29]))
+```
+
+### 2.1 Boxplot_pulserate
+
+```{r}
+ggplot() +
+  geom_boxplot(aes(x= Sex_s, y=pulserate), data = dat_3) + 
+  geom_point(aes(x=Sex_s, y=pulserate, color = "Rupert"), data=dat_ch) +
+  geom_point(aes(x=Sex_s, y=pulserate, color = "Rupert with towel"), data=dat_nch1) + 
+  geom_point(aes(x=Sex_s, y=pulserate, color = "Savannah Georgia female"), data=dat_nch2)
+```
+
+### 2.2 Boxplot_Duration
+
+```{r}
+ggplot() +
+  geom_boxplot(aes(x= Sex_s, y=duration), data = dat_3) + 
+  geom_point(aes(x=Sex_s, y=duration, color = "Rupert"), data=dat_ch) +
+  geom_point(aes(x=Sex_s, y=duration, color = "Rupert with towel"), data=dat_nch1) + 
+  geom_point(aes(x=Sex_s, y=duration, color = "Savannah Georgia female"), data=dat_nch2)
+```
+
+### 2.3 Boxplot_IQR BW
+
+```{r}
+ggplot() +
+  geom_boxplot(aes(x= Sex_s, y=`IQR BW (Hz)_s`), data = dat_3) + 
+  geom_point(aes(x=Sex_s, y=`IQR BW (Hz)_s`, color = "Rupert"), data=dat_ch) +
+  geom_point(aes(x=Sex_s, y=`IQR BW (Hz)_s`, color = "Rupert with towel"), data=dat_nch1) + 
+  geom_point(aes(x=Sex_s, y=`IQR BW (Hz)_s`, color = "Savannah Georgia female"), data=dat_nch2)
+```
+
+## 3. QQPlot
+
+### 3.1 QQPlot_dat3
+
+```{r}
+qqnorm(dat_3$pulserate, pch = 1, frame = FALSE)
+qqline(dat_3$pulserate, col = "blue", lwd = 2)
+```
+
+
+```{r}
+qqnorm(dat_3$duration, pch = 1, frame = FALSE)
+qqline(dat_3$duration, col = "blue", lwd = 2)
+```
+
+
+```{r}
+qqnorm(dat_3$`IQR BW (Hz)_s`, pch = 1, frame = FALSE)
+qqline(dat_3$`IQR BW (Hz)_s`, col = "blue", lwd = 2)
+```
+
+
+### 3.2 QQPlot_dat2
+
+```{r}
+qqnorm(dat_2$pulserate, pch = 1, frame = FALSE)
+qqline(dat_2$pulserate, col = "blue", lwd = 2)
+```
+
+
+```{r}
+qqnorm(dat_2$duration, pch = 1, frame = FALSE)
+qqline(dat_2$duration, col = "blue", lwd = 2)
+```
+
+```{r}
+qqnorm(dat_2$`IQR BW (Hz)_s`, pch = 1, frame = FALSE)
+qqline(dat_2$`IQR BW (Hz)_s`, col = "blue", lwd = 2)
+```
+
+
+## 4 Welch's t-test
+
+### 4.1 Rupert vs. all ID#1 vocalizations where units >1
+
+```{r}
+t.test(dat_ch$pulserate, dat_id1$pulserate)
+t.test(dat_ch$duration, dat_id1$duration)
+t.test(dat_ch$`IQR BW (Hz)_s`, dat_id1$`IQR BW (Hz)_s`)
+```
+
+### 4.2 Rupert with towel vs Savannah Georgia female
+
+```{r}
+#t.test(dat_nch1$pulserate, dat_nch2$pulserate)
+#t.test(dat_nch1$duration, dat_nch2$duration)
+#t.test(dat_nch1$`IQR BW (Hz)_s`, dat_nch2$`IQR BW (Hz)_s`)
+```
+
+### 4.3  Rupert with towel vs all #1 vocalizations where units >1
+
+```{r}
+#t.test(dat_nch1$pulserate, dat_id1$pulserate)
+#t.test(dat_nch1$duration, dat_id1$duration)
+#t.test(dat_nch1$`IQR BW (Hz)_s`, dat_id1$`IQR BW (Hz)_s`)
+```
+
+### 4.4 Savannah Georgia female vs all Savannah Georgia female vocalizations where Units>1.
+
+```{r}
+t.test(dat_nch2$pulserate, dat_id2$pulserate)
+t.test(dat_nch2$duration, dat_id2$duration)
+t.test(dat_nch2$`IQR BW (Hz)_s`, dat_id2$`IQR BW (Hz)_s`)
+```
+
+### 4.5 Rupert vs. ((all ID #1 and all ID #55) where units > 1)
+
+```{r}
+t.test(dat_ch$pulserate, dat_3$pulserate)
+t.test(dat_ch$duration, dat_3$duration)
+t.test(dat_ch$`IQR BW (Hz)_s`, dat_3$`IQR BW (Hz)_s`)
+```
+
+### 4.6 Rupert vs Savannah Gerogia female
+
+```{r}
+t.test(dat_ch$pulserate, dat_nch2$pulserate)
+t.test(dat_ch$duration, dat_nch2$duration)
+t.test(dat_ch$`IQR BW (Hz)_s`, dat_nch2$`IQR BW (Hz)_s`)
+```
+
+### 4.7 Rupert vs Rupert with towel
+
+```{r}
+#t.test(dat_ch$pulserate, dat_nch1$pulserate)
+#t.test(dat_ch$duration, dat_nch1$duration)
+#t.test(dat_ch$`IQR BW (Hz)_s`, dat_nch1$`IQR BW (Hz)_s`)
+```
+
+
+### 4.8 Savannah Georgia female vs ((all ID #1 and all ID #55) where units > 1)
+
+```{r}
+t.test(dat_nch2$pulserate, dat_3$pulserate)
+t.test(dat_nch2$duration, dat_3$duration)
+t.test(dat_nch2$`IQR BW (Hz)_s`, dat_3$`IQR BW (Hz)_s`)
+```
+
+## 5 Permutation test
+
+### 5.1 Permutation test : Rupert vs. all ID#1 vocalizations where units >1
+
+#### Pulserate
+
+```{r}
+#Permutation test
+permutation.test <- function(treatment, outcome, n){
+  distribution=c()
+  result=0
+  for(i in 1:n){
+    distribution[i]=diff(by(outcome, sample(treatment, length(treatment), FALSE), mean))
+  }
+  result=sum(abs(distribution) >= abs(original))/(n)
+  return(list(result, distribution))
+}
+```
+
+
+```{r}
+# Generating data
+set.seed(2022)
+
+dat_3 = dat_2 %>% filter(`Owl ID #_s` %in% c(1)) %>% filter(`Units (notes)` > 1)
+d1 <- data.frame(dat_3$pulserate, dat_3$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Duration
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_3$duration, dat_3$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Bandwidth
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_3$`IQR BW (Hz)_s`, dat_3$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+### 5.2 Permutation test :  Rupert with towel vs Savannah Georgia female
+
+#### Pulserate
+
+```{r}
+# Generating data
+set.seed(2022)
+
+dat_5 = dat_2 %>% filter(response == 1) %>% filter(chuckles == 0) %>% filter(`Units (notes)` > 1)
+d1 <- data.frame(dat_5$pulserate, dat_5$`Owl ID #_s`)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Duration
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5$duration, dat_5$`Owl ID #_s`)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Bandwidth
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5$`IQR BW (Hz)_s`, dat_5$`Owl ID #_s`)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+
+### 5.3 Rupert with towel vs all #1 vocalizations where units >1
+
+#### Pulserate
+
+```{r}
+# Generating data
+set.seed(2022)
+
+dat_5 = dat_2 %>% filter(`Owl ID #_s` == 1) %>% filter(chuckles == 0) %>% filter(`Units (notes)` > 1)
+d1 <- data.frame(dat_5$pulserate, dat_5$response)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Duration
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5$duration, dat_5$response)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Bandwidth
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5$`IQR BW (Hz)_s`, dat_5$response)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+
+### 5.4 Savannah Georgia female vs all Savannah Georgia female vocalizations where Units>1.
+
+#### Pulserate
+
+```{r}
+# Generating data
+set.seed(2022)
+
+dat_5 = dat_2 %>% filter(`Owl ID #_s` == 55) %>% filter(chuckles == 0) %>% filter(`Units (notes)` > 1)
+d1 <- data.frame(dat_5$pulserate, dat_5$response)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Duration
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5$duration, dat_5$response)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Bandwidth
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5$`IQR BW (Hz)_s`, dat_5$response)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+### 5.5 Rupert vs. ((all ID #1 and all ID #55) where units > 1)
+
+
+#### Pulserate
+
+```{r}
+# Generating data
+set.seed(2022)
+
+dat_3 = dat_2 %>% filter(`Owl ID #_s` %in% c(1,55)) %>% filter(`Units (notes)` > 1)
+d1 <- data.frame(dat_3$pulserate, dat_3$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Duration
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_3$duration, dat_3$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Bandwidth
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_3$`IQR BW (Hz)_s`, dat_3$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+### 5.6 Rupert vs Savannah Gerogia female
+
+```{r}
+dat_5_6 = rbind(dat_ch, dat_nch2)
+dat_5_6$`Owl ID #_s` = c(1,1,55,55)
+```
+
+#### Pulserate
+
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5_6$pulserate, dat_5_6$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Duration
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5_6$duration, dat_5_6$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Bandwidth
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5_6$`IQR BW (Hz)_s`, dat_5_6$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+### 5.7 Rupert vs Rupert with towel
+
+```{r}
+dat_5_7 = rbind(dat_ch, dat_nch1)
+```
+
+
+#### Pulserate
+
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5_7$pulserate, dat_5_7$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Duration
+
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5_7$duration, dat_5_7$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+#### Bandwidth
+```{r}
+# Generating data
+set.seed(2022)
+
+d1 <- data.frame(dat_5_7$`IQR BW (Hz)_s`, dat_5_7$chuckles)
+colnames(d1) = c("V1", "V2")
+treatment <- d1$V2
+outcome <- d1$V1
+
+#Difference in means
+original <- diff(tapply(outcome, treatment, mean))
+mean(outcome[treatment==1])-mean(outcome[treatment==0])
+test1 <- permutation.test(treatment, outcome, 10000)
+hist(test1[[2]], breaks=50, col='grey', main="Permutation Distribution", las=1, xlab='')
+abline(v=original, lwd=3, col="red")
+
+test1[[1]]
+```
+
+
+
