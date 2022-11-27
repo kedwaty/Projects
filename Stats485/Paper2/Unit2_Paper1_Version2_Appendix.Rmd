@@ -1,0 +1,267 @@
+---
+title: "Unit 2 Paper Technical Appendices"
+author: "youngwoo Kwon"
+date: '2021 3 4 '
+output: pdf_document
+---
+#Summary
+In Appendix 1, the theoratical background for the data modificaiton was proven. Also, the hypothesis selection was done.
+
+In Appendix 2, basic data analysis was done. The code calculated the proportion of missing values and displayed some scatter plots explaing the relationship between GMP and population size. The code also plotted other variables to find the connection with the previous relationship.
+
+In Appendix 3, the code chose the linear model and plotted that model. It calculated the loss function outcome and residual variances.
+
+In Appendix 4, the alternative models were written. Also, the loss function outcomes for those models were calculated.
+
+In Appendix 5, original model and one comparable alternative model was compared with f-test.
+
+
+#Appendix 1: Detail of Statistical models
+
+1. If $Y \approx cN^b$ for some $c>0, b>1$, then $log(\frac{Y}{N}) \approx \beta_0 + \beta_1log(N)$ for some $\beta_0 \in (-\infty, \infty), \beta_1 > 0$, and also $log(Y) \approx \beta_0 + (1+\beta_1)log(N)$.
+
+Let $Y \approx cN^b$. Then, $log(Y) \approx log(c) + blog(N)$. Therefore, for $\beta_0 = log(c), \beta_1 = b-1$, $log(Y) \approx \beta_0 + (1+\beta_1)log(N)$. Since $c>0, b>1$, we can say that $\beta_0 \in (-\infty, \infty)$ and $\beta_1 > 0$.
+
+If we subtract log(N) in both sides, $log(Y) -log(N) \approx log(c) + (b-1)log(N)$. So  $log(\frac{Y}{N}) \approx \beta_0 + \beta_1log(N)$ for $\beta_0 = log(c), \beta_1 = b-1$.
+
+
+2. Three hypothesis about how these other variables might influence per-capita GMP (pcgmp).
+
+  1) There is a linear relationship between Per-Capita GMP and population + fianace. (pcgmp ~ pop + finance) 
+  
+  2) There is a linear relationship between Per-Capita GMP and population + information, communication and technology. (pcgmp ~ pop + ict)
+  
+  3) There is a linear relationship between GMP and population + information, communication and technologys. (gmp ~ pop + ict)
+
+\newpage
+
+#Appendix 2: Exploratory analyses
+
+1. Read and modify the data
+```{r}
+library(ggplot2)
+library(dplyr)
+mydata = read.csv("http://dept.stat.lsa.umich.edu/~bbh/s485/data/gmp-2006.csv")
+head(mydata)
+```
+
+```{r}
+newdata <- mydata
+newdata$pcgmp <- as.double(newdata$pcgmp)
+newdata$pop <- as.double(newdata$pop)
+newdata$gmp <- newdata$pop * newdata$pcgmp
+head(newdata)
+```
+
+2. Missing Values
+
+```{r}
+nrow(newdata)
+
+Finance_prop = nrow(newdata[4] %>% na.omit())/nrow(newdata)
+Prof.tech_prop = nrow(newdata[5] %>% na.omit())/nrow(newdata)
+ict_prop = nrow(newdata[6] %>% na.omit())/nrow(newdata)
+management_prop = nrow(newdata[7] %>% na.omit())/nrow(newdata)
+Finance_prof.tech_prop = nrow(newdata[4:5] %>% na.omit())/nrow(newdata)
+
+Finance_prop
+Prof.tech_prop
+ict_prop
+management_prop
+Finance_prof.tech_prop
+
+nrow(newdata %>% na.omit())/nrow(newdata)
+```
+96.31148% of data have no missing value in finance section.
+
+67.21311% of data have no missing value in professional and technical services section.
+
+83.19672% of data have no missing value in information, communication and technology section.
+
+55.32787% of data have no missing value in and enterprises section.
+
+65.57377% of data have no missing value in finance and professional and technical services section.
+
+37.29508% of data have no missing value.
+
+3. Scatter plot
+```{r}
+gmp_pop = ggplot(newdata, aes(y=gmp, x=pop)) +
+  geom_point() +
+  geom_smooth(se=FALSE)
+gmp_pop
+```
+```{r}
+loggmp_pop = ggplot(newdata, aes(y=gmp, x=log(pop))) +
+  geom_point() +
+  geom_smooth(se=FALSE)
+loggmp_pop
+```
+```{r}
+gmp_logpop = ggplot(newdata, aes(y=log(gmp), x=pop)) +
+  geom_point() +
+  geom_smooth(se=FALSE)
+gmp_logpop
+```
+```{r}
+loggmp_logpop = ggplot(newdata, aes(y=log(gmp), x=log(pop))) +
+  geom_point() +
+  geom_smooth(se=FALSE)
+loggmp_logpop
+```
+The results say that the log(y)~log(x) is better scale for capturing patterns.
+
+
+4. Other variances and gmp~pop
+
+```{r}
+loggmp_logpop_finance = ggplot(newdata, aes(y=log(gmp), x=log(pop))) +
+  geom_point(aes(colour = finance))
+loggmp_logpop_finance
+```
+
+```{r}
+loggmp_logpop_prof.tech = ggplot(newdata, aes(y=log(gmp), x=log(pop))) +
+  geom_point(aes(colour = prof.tech))
+loggmp_logpop_prof.tech
+```
+
+```{r}
+loggmp_logpop_ict = ggplot(newdata, aes(y=log(gmp), x=log(pop))) +
+  geom_point(aes(colour = ict))
+loggmp_logpop_ict
+```
+
+I didn't remove the NA values because ggplot would automatically neglect and do not colour the data that have NA value
+
+\newpage
+
+#Appendix 3: Fitting the power law model
+
+1.Basic linear model
+```{r}
+lm_loggmp_logpop = lm(log(gmp)~log(pop), data = newdata)
+summary(lm_loggmp_logpop)
+```
+
+As we saw in the #Appendix 1, the log(c) = log(8.79623) equals to the $\beta_0$, and b-1 = 1.12326 - 1 = 0.012326 equals to the $\beta_1$. Since the Adjusted R-squared value is over 0.96 and t value for each estimate is large, we can say that this model supports the supra-linear power-law scaling hypothesis.
+
+
+2. Plot the data, errors and residuals
+
+```{r}
+ggplot(newdata, aes(y=log(gmp), x=log(pop))) +
+  geom_point() +
+  geom_abline(intercept = lm_loggmp_logpop$coefficients[1], slope = lm_loggmp_logpop$coefficients[2])
+```
+
+```{r}
+var(lm_loggmp_logpop$residuals)
+0.238^2 #From Residual standard error at linear model summary
+```
+So the variance of ghe residuals are almost equal to the variance of the regression. Sinde we got high t-value and small p-value for each coefficients and high adjusted R-sqaure value, we can trust the estimated coefficients.
+
+
+3. Loss function, In-sample loss, estimated values of parameters
+
+```{r}
+loss_log <-function(z, model){
+  result = (log(z[1]) - predict(model, z[-1]))^2
+  return(colMeans(result))
+}
+
+loss_log(newdata[c(8,3)], lm_loggmp_logpop)
+```
+
+(Used log_e instead of log_10. Essentially, $log_e(x) = rlog_{10}(x)$ where $r = log_e10$, so nothing important changed.)
+
+So the in-sample loss is 0.05619567. Since the in-sample loss is quite low, the expected values of the parameters make sense.
+
+\newpage
+
+#Appendix 4: Fitting and assessment of alternate models
+
+1, 2. Three alternate regression models & fit models
+
+  1) There is a linear relationship between Per-Capita GMP and population + fianace. (pcgmp ~ pop + finance) 
+  
+  2) There is a linear relationship between Per-Capita GMP and population + information, communication and technology. (pcgmp ~ pop + ict)
+  
+  3) There is a linear relationship between Per-Capita GMP and population + professional and technical services. (pcgmp ~ pop + prof.tech)
+  
+```{r}
+alt_model1 = lm(pcgmp~pop + finance, data = newdata)
+alt_model2 = lm(pcgmp~pop + ict, data = newdata)
+alt_model3 = lm(gmp~pop + ict, data = newdata)
+```
+
+```{r}
+summary(alt_model1)
+summary(alt_model2)
+summary(alt_model3)
+```
+
+All three models have very low adjusted r-sqaured value.
+
+3. Evaluate the model based on the square-error loss function
+
+```{r}
+loss <-function(z, model){
+  result = (z[1] - predict(model, z[-1]))^2
+  return(colMeans(result))
+}
+
+loss(newdata[c(2,3,4)] %>% na.omit(), alt_model1)
+loss(newdata[c(2,3,6)] %>% na.omit(), alt_model2)
+loss(newdata[c(8,3,6)] %>% na.omit(), alt_model3)
+
+log(loss(newdata[c(2,3,4)] %>% na.omit(), alt_model1))
+log(loss(newdata[c(2,3,6)] %>% na.omit(), alt_model2))
+log(loss(newdata[c(8,3,6)] %>% na.omit(), alt_model3))
+```
+
+All three models have very large loss function output. But we have to consider that 1) pcgmp and gmp has different scale, 2) the third alternative model considers gmp in normal scale, not a log scale.
+
+\newpage
+
+#Appendix 5: Additional cacluation for version 2
+
+To check the alternative model 3 more deeply, we need to make another loss function that is meaningful for the comparison. So, we made log_logloss function that compares the log of the residuals and log of predictions.
+
+One problem is that we could not calculate the prediction if our prediction is less than zero. Although they are useful, I had to removed those data during the calculation.
+
+```{r}
+log_logloss <- function(z,model){
+  x = log(abs(predict(model, z[-1]))) 
+  result = (log(z[1]) - x)^2 %>% na.omit()
+  return(colMeans(result))
+}
+
+log_logloss(newdata[c(8,3,6)] %>% na.omit(), alt_model3)
+```
+
+One another way to check the model is do the F-test. 
+
+```{r}
+renewed_data <- newdata
+renewed_data$scaled_pop <- (newdata$pop)^lm_loggmp_logpop$coefficients[2]
+renewed_model = lm(gmp~scaled_pop + 0, data=renewed_data)
+summary(renewed_model)
+```
+
+
+```{r}
+compare_model1 = renewed_model
+compare_model2 = lm(gmp~pop + ict, data = renewed_data)
+summary(compare_model1)
+summary(compare_model2)
+```
+
+We can check the F-statistic of two models. So we can check the p-value.
+
+```{r}
+pf(24650, 1, 243, lower.tail = FALSE)
+pf(9148, 2, 200, lower.tail = FALSE)
+```
+
+Our first model has a lower p-value from the F-statistic. So we can say that our first model is better, but those differences are not significiant since both p-values are so low.
