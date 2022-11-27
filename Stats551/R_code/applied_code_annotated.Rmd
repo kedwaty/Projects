@@ -1,0 +1,754 @@
+---
+title: "Stats_551_final_project"
+author: "Anil, Heather, Youngwoo"
+date: "4/19/2022"
+output:
+  rmarkdown::html_document:
+    toc: TRUE
+    toc_float:
+      collapsed: True
+      smooth_scroll: True
+    theme: flatly
+    highlight: tango
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+responses <- read_csv("https://raw.githubusercontent.com/OxCGRT/covid-policy-tracker/master/data/OxCGRT_latest.csv")
+library(sigmoid)
+library(clipr)
+library(dplyr)
+period <- 1
+```
+
+# Introduction
+
+Covid-19, also named as 2019-nCoV, 2019 novel coronavirus by the World Health Organization, is in charge of the current outbreak of pneumonia which began in December 2019 in China.  . Compared with the notorious outbreaks of Ebola or SARS, COVID-19 showed relatively low mortality rate but faster spread rate via mildly symptomatic cases. In response to the spread of the corona, the public health and government promoted various policies such as social distancing requirements, masks requirements, stay-at-home orders, or travel restrictions to limit or prevent person-to-person interactions. The objective of our project is to conduct an analysis of the United States, “country 1”, and “country 2” with a “Method”.
+
+# Data
+
+```{r}
+source("data/get_case_data.R")
+```
+
+```{r}
+# data
+data = cases
+rcountries = c("United States")
+data <- data %>%
+  filter(location %in% rcountries) %>%
+  filter(!is.na(new_cases)) %>%
+  group_by(location) %>%
+  mutate(recoveries = generate_recovery(new_cases)) %>%
+  mutate(currently_infected = cumsum(new_cases) - cumsum(recoveries)) %>%
+  select(location, currently_infected, susceptible_estimate, new_cases, recoveries, date) %>%
+  rename(I=currently_infected, S=susceptible_estimate, Infection=new_cases, Recovery=recoveries, day=date)  %>%
+  ungroup()
+```
+
+```{r}
+#Infection in United States
+ggplot(data, aes(x = day, y = I, color = location)) +
+  geom_line()
+```
+
+
+```{r}
+head(cases[cases$location=="United States",])
+N<-332915074
+```
+
+```{r}
+rcon1_data = cases_orig %>% filter(location == "United States")
+```
+
+```{r}
+#Fully vaccination in United States
+plot(rcon1_data$people_fully_vaccinated_per_hundred)
+```
+
+```{r}
+head(cases_orig %>% filter(location == "United States") %>% filter(people_fully_vaccinated_per_hundred > 10))
+```
+
+```{r}
+# Mask policy in United States
+ cases_2 = cases[,c("location", "date", "new_cases", "total_cases","population")]
+ responses_2 = responses[,c("CountryName", "Date", "H6_Facial Coverings")]
+ colnames(responses_2) = c("location", "date", "mask")
+ cases_2$date = 10000 * year(cases_2$date) + 100 * month(cases_2$date) + day(cases_2$date)
+ total <- merge(cases_2,responses_2, by =c("location","date"))
+ total <- drop_na(total)
+ total$date <- as.Date(as.character(total$date), format = "%Y%m%d")
+ total = total[!duplicated(total),]
+ total_us = total[total$location=="United States",]
+
+ total_us = total_us %>% group_by(location, date, new_cases, total_cases,population) %>% mutate(mask_1 = mean(mask)) %>% select(-mask) %>% unique() %>% ungroup()
+```
+
+```{r}
+
+ ggplot(data=total_us)+
+   geom_line(aes(x=date, y=mask_1))
+```
+
+```{r}
+ df_response = data.frame(total_us[1,])
+
+ for(i in 2:nrow(total_us)){
+   if(total_us$mask_1[i] != total_us$mask_1[i-1]){
+     df_response[nrow(df_response) + 1,]<- total_us[i,]
+   }
+
+ }
+ df_response
+```
+
+Four criteria for slicing the data.
+
+2020-10-19 : mask restriction (2.5->3)
+
+2021-01-12 : fully vaccinated rate reached 50%
+
+2021-05-23 : mask (3->2.5)
+
+2021-11-01 : Omicron
+
+```{r}
+# Five data sets based on the criteria
+data_1 = data %>% filter(day<"2020-10-19")
+data_2 = data %>% filter(day>"2020-10-18") %>% filter(day<"2021-05-23")
+data_3 = data %>% filter(day>"2021-05-22") %>% filter(day<"2021-07-13")
+data_4 = data %>% filter(day>"2021-07-12") %>% filter(day<"2021-11-01")
+data_5 = data %>% filter(day>"2021-10-31") %>% filter(day<"2022-04-10")
+```
+
+```{r}
+head(data_1)
+```
+
+# Statistical Methods
+
+For the Metropolis - Hasting algorithm, we need the following components: - Likelihood function - Prior distribution - Proposal distribution - Proposal sampler
+
+### Likelihood function:
+
+```{r}
+#Probability function for the infection and recovery
+prob_inf <- function(beta, s, i, x, N){
+  rate = period*beta*s*i/N
+  return(dpois(x, rate, log = TRUE))
+}
+
+prob_rec <- function(gamma, i, x){
+  rate <- period*gamma*i
+  return(dpois(x, rate, log = TRUE))
+}
+```
+
+```{r}
+#Likelihood function for infection and recovery
+likelihood_infection <- function(data, beta){
+  ll <- 0
+  days <- data$day
+  for (d in days){
+    drow <- data[data$day == d, ]
+    s <- drow$S
+    i <- drow$I
+    x_inf <- drow$Infection
+    ll <- ll + (prob_inf(beta, s, i, x_inf, N))
+  }
+  return(ll)
+}
+
+likelihood_rec <- function(data, gamma){
+  ll <- 0
+  days <- data$day
+  for (d in days){
+    drow <- data[data$day == d, ]
+    i <- drow$I
+    x_rec <- drow$Recovery
+    ll <- ll + (prob_rec(gamma, i, x_rec))
+  }
+  return(ll)
+}
+```
+
+```{r}
+#Applied data_1 into likelihood function
+lapply(seq(0.01, 0.5, 0.01), likelihood_infection, data=data_1) %>% unlist() %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+
+### Prior distribution
+
+We will assume that the prior distribution for beta is a gamma with a mode on 0.2 (we know that the data has been generated with beta=0.25)
+
+```{r}
+#Prior distribution
+variance <- 0.7
+mod <- 0.2
+shape <- 1/(variance-mod)
+rate <- (shape-1)/mod
+
+gamma_test <- rgamma(1000, shape, rate)
+plot(density(gamma_test))
+```
+
+```{r}
+# beta from the prior distribution
+prior_beta <- function(theta){
+  return(dgamma(theta, shape, rate, log = TRUE))
+}
+```
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), prior_beta) %>% unlist %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+### Proposal distribution:
+
+```{r}
+#Probability for the proposal distribution
+prop_pdf <- function(theta, theta_prev){
+  return(dlnorm(theta, log(0.2)+1, sigmoid(1/theta_prev), log = T))
+}
+```
+
+Proposal sampler:
+
+```{r}
+#Sampler for the Proposal distribution
+prop_samplr <- function(theta_prev){
+   return(rlnorm(1, log(0.2)+1, sigmoid(1/theta_prev)))
+}
+```
+
+We will also write a posterior function to simplify our task:
+
+```{r}
+#Beta for the posterior distribution
+posterior_beta <- function(data, beta){
+    likelihood <- likelihood_infection(data, beta)
+    prior <- prior_beta(beta)
+    return(likelihood+prior)
+}
+```
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), posterior_beta, data=data_1) %>% unlist %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+
+### Metropolis-Hasting algorithm
+
+```{r}
+# Estimate beta_1 from the Metropolis-Hasting algorithm
+set.seed(0193)
+reps <- 1000
+pb = txtProgressBar(min = 1, max = reps, initial = 1)
+beta_list_1 <- c(0.2)
+prop_1 <- c(0.2)
+a_list_1 <- c(0)
+for (i in 2:reps){
+  theta_star <- prop_samplr(last(beta_list_1))
+  a <- posterior_beta(data_1, theta_star) + prop_pdf(last(beta_list_1), theta_star) -
+    posterior_beta(data_1, last(beta_list_1)) - prop_pdf(theta_star, last(beta_list_1))
+  a_list_1 <- c(a_list_1, a)
+  a <- exp(a)
+  if (a > 1) {
+    beta_list_1 <- c(beta_list_1, theta_star)
+  }
+  else {
+    coin <- rbinom(1,1,a)
+    if (coin == 1){
+      beta_list_1 <- c(beta_list_1, theta_star)
+    }
+    else{
+      prop_1 <- c(prop_1, theta_star)
+    }
+  }
+  setTxtProgressBar(pb,i)
+}
+save(beta_list_1, file = "save_sims/beta_list_1.rds")
+```
+
+
+
+```{r}
+beta_list_1
+```
+```{r}
+d <- density(beta_list_1)
+plot(d)
+```
+
+```{r}
+length(beta_list_1)
+```
+
+### data_2
+
+We will repeat the steps we did in the data_1.
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), likelihood_infection, data=data_2) %>% unlist() %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+```{r}
+variance <- 0.7
+mod <- 0.2
+shape <- 1/(variance-mod)
+rate <- (shape-1)/mod
+
+gamma_test <- rgamma(1000, shape, rate)
+plot(density(gamma_test))
+```
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), prior_beta) %>% unlist %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+### Proposal distribution:
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), posterior_beta, data=data_2) %>% unlist %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+
+### Metropolis-Hasting algorithm
+
+```{r}
+set.seed(3846)
+reps <- 1000
+pb = txtProgressBar(min = 1, max = reps, initial = 1)
+beta_list_2 <- c(0.2)
+prop_2 <- c(0.2)
+a_list_2 <- c(0)
+for (i in 2:reps){
+  theta_star <- prop_samplr(last(beta_list_2))
+  a <- posterior_beta(data_2, theta_star) + prop_pdf(last(beta_list_2), theta_star) -
+    posterior_beta(data_2, last(beta_list_2)) - prop_pdf(theta_star, last(beta_list_2))
+  a_list_2 <- c(a_list_2, a)
+  a <- exp(a)
+  if (a > 1) {
+    beta_list_2 <- c(beta_list_2, theta_star)
+  }
+  else {
+    coin <- rbinom(1,1,a)
+    if (coin == 1){
+      beta_list_2 <- c(beta_list_2, theta_star)
+    }
+    else{
+      prop_2 <- c(prop_2, theta_star)
+    }
+  }
+  setTxtProgressBar(pb,i)
+}
+save(beta_list_2, file = "save_sims/beta_list_2.rds")
+```
+
+```{r}
+beta_list_2
+```
+```{r}
+d <- density(beta_list_2)
+plot(d)
+```
+
+```{r}
+length(beta_list_2)
+```
+
+
+### data_3
+
+We will repeat the steps we did in the data_1.
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), likelihood_infection, data=data_3) %>% unlist() %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+
+```{r}
+variance <- 0.7
+mod <- 0.2
+shape <- 1/(variance-mod)
+rate <- (shape-1)/mod
+
+gamma_test <- rgamma(1000, shape, rate)
+plot(density(gamma_test))
+```
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), prior_beta) %>% unlist %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+### Proposal distribution:
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), posterior_beta, data=data_3) %>% unlist %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+### Metropolis-Hasting algorithm
+
+```{r}
+set.seed(3994)
+reps <- 1000
+pb = txtProgressBar(min = 1, max = reps, initial = 1)
+beta_list_3 <- c(0.2)
+prop_3 <- c(0.2)
+a_list_3 <- c(0)
+for (i in 2:reps){
+  theta_star <- prop_samplr(last(beta_list_3))
+  a <- posterior_beta(data_3, theta_star) + prop_pdf(last(beta_list_3), theta_star) -
+    posterior_beta(data_3, last(beta_list_3)) - prop_pdf(theta_star, last(beta_list_3))
+  a_list_3 <- c(a_list_3, a)
+  a <- exp(a)
+  if (a > 1) {
+    beta_list_3 <- c(beta_list_3, theta_star)
+  }
+  else {
+    coin <- rbinom(1,1,a)
+    if (coin == 1){
+      beta_list_3 <- c(beta_list_3, theta_star)
+    }
+    else{
+      prop_3 <- c(prop_3, theta_star)
+    }
+  }
+  setTxtProgressBar(pb,i)
+}
+save(beta_list_3, file = "save_sims/beta_list_3.rds")
+```
+
+```{r}
+beta_list_3
+```
+```{r}
+d <- density(beta_list_3)
+plot(d)
+```
+
+```{r}
+length(beta_list_3)
+```
+
+
+### data_4
+
+We will repeat the steps we did in the data_1.
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), likelihood_infection, data=data_4) %>% unlist() %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+```{r}
+variance <- 0.7
+mod <- 0.2
+shape <- 1/(variance-mod)
+rate <- (shape-1)/mod
+
+gamma_test <- rgamma(1000, shape, rate)
+plot(density(gamma_test))
+```
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), prior_beta) %>% unlist %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+### Proposal distribution:
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), posterior_beta, data=data_4) %>% unlist %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+### Metropolis-Hasting algorithm
+
+```{r}
+set.seed(4535)
+reps <- 1000
+pb = txtProgressBar(min = 1, max = reps, initial = 1)
+beta_list_4 <- c(0.2)
+prop_4 <- c(0.2)
+a_list_4 <- c(0)
+for (i in 2:reps){
+  theta_star <- prop_samplr(last(beta_list_4))
+  a <- posterior_beta(data_4, theta_star) + prop_pdf(last(beta_list_4), theta_star) -
+    posterior_beta(data_4, last(beta_list_4)) - prop_pdf(theta_star, last(beta_list_4))
+  a_list_4 <- c(a_list_4, a)
+  a <- exp(a)
+  if (a > 1) {
+    beta_list_4 <- c(beta_list_4, theta_star)
+  }
+  else {
+    coin <- rbinom(1,1,a)
+    if (coin == 1){
+      beta_list_4 <- c(beta_list_4, theta_star)
+    }
+    else{
+      prop_4 <- c(prop_4, theta_star)
+    }
+  }
+  setTxtProgressBar(pb,i)
+}
+save(beta_list_4, file = "save_sims/beta_list_4.rds")
+```
+
+```{r}
+beta_list_4
+```
+```{r}
+d <- density(beta_list_4)
+plot(d)
+```
+
+```{r}
+length(beta_list_4)
+```
+
+
+### data_5
+
+We will repeat the steps we did in the data_1.
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), likelihood_infection, data=data_5) %>% unlist() %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+
+```{r}
+variance <- 0.7
+mod <- 0.2
+shape <- 1/(variance-mod)
+rate <- (shape-1)/mod
+
+gamma_test <- rgamma(1000, shape, rate)
+plot(density(gamma_test))
+```
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), prior_beta) %>% unlist %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+### Proposal distribution:
+
+```{r}
+lapply(seq(0.01, 0.5, 0.01), posterior_beta, data=data_5) %>% unlist %>% plot(x=seq(0.01, 0.5, 0.01))
+```
+
+### Metropolis-Hasting algorithm
+
+```{r}
+set.seed(3562)
+reps <- 1000
+pb = txtProgressBar(min = 1, max = reps, initial = 1)
+beta_list_5 <- c(0.2)
+prop_5 <- c(0.2)
+a_list_5 <- c(0)
+for (i in 2:reps){
+  theta_star <- prop_samplr(last(beta_list_5))
+  a <- posterior_beta(data_5, theta_star) + prop_pdf(last(beta_list_5), theta_star) -
+    posterior_beta(data_5, last(beta_list_5)) - prop_pdf(theta_star, last(beta_list_5))
+  a_list_5 <- c(a_list_5, a)
+  a <- exp(a)
+  if (a > 1) {
+    beta_list_5 <- c(beta_list_5, theta_star)
+  }
+  else {
+    coin <- rbinom(1,1,a)
+    if (coin == 1){
+      beta_list_5 <- c(beta_list_5, theta_star)
+    }
+    else{
+      prop_5 <- c(prop_5, theta_star)
+    }
+  }
+  setTxtProgressBar(pb,i)
+}
+save(beta_list_5, file = "save_sims/beta_list_5.rds")
+```
+
+```{r}
+beta_list_5
+```
+```{r}
+d <- density(beta_list_5)
+plot(d)
+```
+
+```{r}
+length(beta_list_5)
+```
+
+```{r}
+#Beta_list for each five data sets.
+beta_list_1
+beta_list_2
+beta_list_3
+beta_list_4
+beta_list_5
+```
+
+# Recovery Part
+
+
+For the Metropolis - Hasting algorithm, we need the following components: - Likelihood function - Prior distribution - Proposal distribution - Proposal sampler
+
+### Likelihood function:
+
+```{r}
+#Remove the data that contains NA value
+data = data %>% filter(day<"2022-04-10")
+
+#Probability function for recovery state
+prob_rec <- function(gamma, i, x){
+  rate <- period*gamma*i
+  return(dpois(x, rate, log = TRUE))
+}
+```
+
+```{r}
+#Likelihood function for the recovery state
+likelihood_rec <- function(data, gamma){
+  ll <- 0
+  days <- data$day
+  for (d in days){
+
+    drow <- data[data$day == d, ]
+    i <- drow$I
+    if(i!=0){
+    x_rec <- drow$Recovery
+    ll <- ll + (prob_rec(gamma, i, x_rec))
+    }
+  }
+  return(ll)
+}
+```
+
+
+```{r}
+lapply(seq(0.01, 0.4, 0.01), likelihood_rec, data=data) %>% unlist %>% plot(x=seq(0.01, 0.4, 0.01))
+```
+
+
+### Prior distribution
+
+We will assume that the prior distribution for beta is a gamma with a mode on 0.2 (we know that the data has been generated with beta=0.2)
+
+```{r}
+variance <- 0.25
+mod <- 0.2
+shape <- 1/(variance-mod)
+rate <- (shape-1)/mod
+
+gamma_test <- rgamma(1000, shape, rate)
+plot(density(gamma_test))
+```
+
+
+```{r}
+prior_gamma <- function(theta){
+  return(dgamma(theta, shape, rate, log = TRUE))
+}
+```
+
+
+```{r}
+lapply(seq(0.01, 0.4, 0.01), prior_gamma) %>% unlist %>% plot(x=seq(0.01, 0.4, 0.01))
+```
+
+### Proposal distribution
+
+```{r}
+prop_pdf <- function(theta, theta_prev){
+  return(dlnorm(theta, log(0.22)+1, 1+sigmoid(1/theta_prev), log = T))
+}
+```
+
+### Proposal sampler
+
+```{r}
+prop_samplr <- function(theta_prev){
+   return(rlnorm(1, log(0.22)+1, 1+sigmoid(1/theta_prev)))
+}
+```
+
+We will also write a posterior function to simplify our task:
+
+```{r}
+posterior_gamma <- function(data, gamma){
+    likelihood <- likelihood_rec(data, gamma)
+    prior <- prior_gamma(gamma)
+    return(likelihood+prior)
+}
+```
+
+```{r}
+lapply(seq(0.01, 0.6, 0.01), posterior_gamma, data=data) %>% unlist %>% plot(x=seq(0.01, 0.6, 0.01))
+```
+
+
+### Metropolis-Hasting algorithm
+
+```{r}
+set.seed(8402)
+reps <- 10000
+pb = txtProgressBar(min = 1, max = reps, initial = 1)
+gamma_list <- c(0.2)
+prop <- c(0.2)
+a_list <- c(0)
+for (j in 2:reps){
+  theta_star <- prop_samplr(last(gamma_list))
+  a <- posterior_gamma(data, theta_star) + prop_pdf(last(gamma_list), theta_star) -
+    posterior_gamma(data, last(gamma_list)) - prop_pdf(theta_star, last(gamma_list))
+  a_list <- c(a_list, a)
+  a <- exp(a)
+  if (a > 1) {
+    gamma_list <- c(gamma_list, theta_star)
+  }
+  else {
+    coin <- rbinom(1,1,a)
+    if (coin == 1){
+      gamma_list <- c(gamma_list, theta_star)
+    }
+    else{
+      prop <- c(prop, theta_star)
+    }
+  }
+  setTxtProgressBar(pb,j)
+}
+save(gamma_list, file = "save_sims/gamma_list.rds")
+```
+
+```{r}
+gamma_list
+```
+
+```{r}
+d <- density(gamma_list)
+plot(d)
+```
+
+```{r}
+length(gamma_list)
+```
+
+# MCMC diagnostics
+
+```{r}
+betas <- list(beta_list_1, beta_list_2, beta_list_3, beta_list_4, beta_list_5)
+params <- list(beta_list_1, beta_list_2, beta_list_3, beta_list_4, beta_list_5, gamma_list)
+save(params, file = "save_sims/all_params.rds")
+lapply(betas, FUN = function(x) mean(x[-1]))
+
+load("./save_sims/all_params.rds")
+params <- readRDS("./save_sims/all_params.rds")
+
+```
+
+```{r}
+
+```

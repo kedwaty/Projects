@@ -1,0 +1,211 @@
+---
+title: "MCMC final infection"
+author: "Anil, Heather, Youngwoo"
+date: "4/18/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sigmoid)
+library(dplyr)
+```
+
+```{r}
+period <- 1/4
+N <- 50000
+```
+
+### Load the data
+
+```{r}
+data_epidemic_aggregated <- readRDS("./data_epidemic_aggregated.rds")
+```
+
+### Sneak a peak into the data
+
+```{r}
+head(data_epidemic_aggregated[data_epidemic_aggregated$t>2, ])
+```
+
+### How to read the data?
+
+Each row in the data says the following: On a day (day), the number of susceptible and infected people in the population are S and I respectively. On the day the number of infection and recovery events are given by the columns 'Infection' and 'Recovery' respectively.
+
+```{r}
+data_epidemic_aggregated
+```
+
+____________________________________________________________________________________________________________________________
+
+
+
+### Metropolis - Hasting algorithm
+
+For the Metropolis - Hasting algorithm, we need the following components: - Likelihood function - Prior distribution - Proposal distribution - Proposal sampler
+
+Likelihood function:
+
+```{r}
+prob_inf <- function(beta, s, i, x, N){
+  rate = period*beta*s*i/N
+  return(dpois(x, rate, log = TRUE))
+}
+
+prob_rec <- function(gamma, i, x){
+  rate <- period*gamma*i
+  return(dpois(x, rate, log = TRUE))
+}
+```
+
+```{r}
+likelihood_infection <- function(data, beta){
+  ll <- 0
+  days <- data$day
+  for (d in days){
+    drow <- data[data$day == d, ]
+    s <- drow$S
+    i <- drow$I
+    x_inf <- drow$Infection
+    ll <- ll + (prob_inf(beta, s, i, x_inf, N))
+  }
+  return(ll)
+}
+
+likelihood_rec <- function(data, gamma){
+  ll <- 0
+  days <- data$day
+  for (d in days){
+    drow <- data[data$day == d, ]
+    i <- drow$I
+    x_rec <- drow$Recovery
+    ll <- ll + (prob_rec(gamma, i, x_rec))
+  }
+  return(ll)
+}
+```
+
+```{r}
+d_temp <- data_epidemic_aggregated[data_epidemic_aggregated$day > 114 & data_epidemic_aggregated$day < 133, ]
+```
+
+```{r}
+d_temp
+```
+
+Plotting the likelihood
+
+```{r}
+lapply(seq(0.01, 0.9, 0.01), likelihood_infection, data=d_temp) %>% unlist() %>% plot(x=seq(0.01, 0.9, 0.01))
+```
+
+Prior distribution: We will assume that the prior distribution for beta is a gamma with a mode on 0.25 (we know that the data has been generated with beta=0.3)
+
+```{r}
+variance <- 0.95
+mod <- 0.2
+shape <- 1/(variance-mod)
+rate <- (shape-1)/mod
+
+gamma_test <- rgamma(1000, shape, rate)
+plot(density(gamma_test))
+```
+
+```{r}
+prior_beta <- function(theta){
+  return(dgamma(theta, shape, rate, log = TRUE))
+}
+```
+
+```{r}
+lapply(seq(0.01, 0.9, 0.01), prior_beta) %>% unlist %>% plot(x=seq(0.01, 0.9, 0.01))
+```
+
+Proposal distribution:
+
+```{r}
+prop_pdf <- function(theta, theta_prev){
+  return(dlnorm(theta, log(0.15)+1, sigmoid(1/theta_prev), log = T))
+}
+```
+
+Proposal sampler:
+
+```{r}
+prop_samplr <- function(theta_prev){
+   return(rlnorm(1, log(0.15)+1, sigmoid(1/theta_prev)))
+}
+```
+
+We will also write a posterior function to simplify our task:
+
+```{r}
+posterior_beta <- function(data, beta){
+    likelihood <- likelihood_infection(data, beta)
+    prior <- prior_beta(beta)
+    return(likelihood+prior)
+}
+```
+
+```{r}
+lapply(seq(0.01, 0.9, 0.01), posterior_beta, data=d_temp) %>% unlist %>% plot(x=seq(0.01, 0.9, 0.01))
+```
+
+```{r}
+data_epidemic_aggregated
+```
+
+
+```{r}
+data <- data_epidemic_aggregated[data_epidemic_aggregated$day > 140 & data_epidemic_aggregated$day < 150, ]
+```
+
+
+### Metropolis-Hasting algorithm
+
+```{r}
+set.seed(620)
+
+reps <- 10000
+pb = txtProgressBar(min = 1, max = reps, initial = 1)
+beta_list <- c(0.4)
+prop <- c(0.4)
+a_list <- c(0)
+for (i in 2:reps){
+  theta_star <- prop_samplr(last(beta_list))
+  a <- posterior_beta(data, theta_star) + prop_pdf(last(beta_list), theta_star) - 
+    posterior_beta(data, last(beta_list)) - prop_pdf(theta_star, last(beta_list))
+  a_list <- c(a_list, a)
+  a <- exp(a)
+  if (a > 1) {
+    beta_list <- c(beta_list, theta_star)
+  }
+  else {
+    coin <- rbinom(1,1,a)
+    if (coin == 1){
+      beta_list <- c(beta_list, theta_star)
+    }
+    else{
+      prop <- c(prop, theta_star)
+    }
+  }
+  setTxtProgressBar(pb,i)
+}
+```
+
+```{r}
+beta_list
+```
+
+
+```{r}
+d <- density(beta_list)
+plot(d)
+```
+```{r}
+mean(beta_list)
+```
+
+```{r}
+length(beta_list)/reps
+```

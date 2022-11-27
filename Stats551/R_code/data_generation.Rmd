@@ -1,0 +1,131 @@
+---
+title: "551 Project"
+author: "Anil, Heather, Youngwoo"
+date: '2022-04-16'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Prerequisites
+
+```{r}
+library(dplyr)
+set.seed(939)
+```
+
+```{r}
+N <- 50000
+period <- 1/4
+
+lambda <- 0.3
+gamma <- 0.1
+t <- 0
+i <- 1
+s <- N - 1
+
+Infection <- c(1)
+Recovery <- c(0)
+I <- c(i)
+S <- c(s)
+t_array <- c(t)
+```
+
+### Generate epidemic data
+
+```{r}
+while (i > 0){
+  ratio <- (lambda*s*i/N)+(gamma*i)
+  tau <- rexp(1, ratio)
+  u <- runif(1)
+  if (u < (ratio-(gamma*i))/ratio){
+    s <- s - 1
+    i <- i + 1
+    Infection <- c(Infection, 1)
+    Recovery <- c(Recovery, 0)
+  }
+  else{
+    i <- i - 1
+    Infection <- c(Infection, 0)
+    Recovery <- c(Recovery, 1)
+  }
+
+  t <- t + tau
+  
+  I <- c(I, i)
+  S <- c(S, s)
+  t_array <- c(t_array, t)
+}
+```
+
+```{r}
+df <- data.frame(list(I=I, S=S, t=t_array, Infection=Infection, Recovery=Recovery))
+```
+
+```{r}
+df
+```
+
+```{r}
+first <- function(d){
+  head(d, n=1)
+}
+
+last <- function(d){
+  tail(d, n=1)
+}
+```
+
+```{r}
+df_flags <- df
+```
+
+```{r}
+df_agg <- data.frame()
+```
+
+```{r}
+for (i in seq(0+period, max(df_flags$t), period)){
+  sel <- df_flags[df_flags$t < i & df_flags$t > i - period, ]
+  if (nrow(sel) != 0){
+      tempdf <- sel %>% 
+          summarise_all(sum)
+      tempdf$t <- i
+      tempdf$I <- first(sel)$I
+      tempdf$S <- first(sel)$S
+      df_agg <- rbind(df_agg, tempdf)
+  }
+}
+```
+
+```{r}
+df_agg$day <- (1/period) * df_agg$t
+```
+
+```{r}
+df_agg
+```
+
+```{r}
+plot(df_agg$I)
+```
+
+```{r}
+plot(df_agg$S)
+```
+
+
+```{r}
+plot(df_agg$Infection)
+```
+
+```{r}
+plot(df_agg$Recovery)
+```
+
+```{r}
+saveRDS(df, file = "data_pandemic_raw.rds")
+saveRDS(df_agg, file = "data_epidemic_aggregated.rds")
+```
