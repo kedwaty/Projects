@@ -1,0 +1,143 @@
+---
+title: "Assignment 2 Appendix"
+output: pdf_document
+---
+
+```{r}
+library(survival)
+library(tidyverse)
+knitr::opts_chunk$set(fig.width=3, fig.height=3) 
+dat = read.csv('C:/Users/krss9/Desktop/FS21/Stats 504/Assignment2/diabeticVision.csv')
+
+#trt = 0 means that eye did not get a treatment. We will change those laser types to none.
+#for(i in 1:nrow(dat))
+#if(dat$trt[i] == 1){
+#  dat$laser[i] ='none'
+#}
+#dat %>% filter(dat$laser == 'none') %>% head()
+```
+```{r}
+dat['trt2'] = 0
+dat[dat$trt == 0, 'trt2'] = 'control'
+dat[dat$trt == 1, 'trt2'] = 'treated'
+head(dat)
+```
+
+```{r}
+sd(dat$futime)
+```
+```{r}
+sum(dat$laser == 'xenon')
+sum(dat$laser == 'argon')
+sum(dat$eye == 'left')
+sum(dat$eye == 'right')
+sum(dat$status == '0')
+sum(dat$status == '1')
+sum(dat$type == 'adult')
+sum(dat$type == 'juvenile')
+sum(dat$trt == '0')
+```
+
+#Goals
+### 1. Determine the efficacy of treatment type on visual acuity 
+### 2. Quantify the improvement between eyes by treatment type
+
+
+### 3. Understand the potential impact that age at diagnosis have on visual acuity
+### 4. understand the potential impact that clinical risk of diabetic retinopathy have on visual acuity
+
+### 0. Overall survival
+```{r}
+survobj <- with(dat, Surv(futime, status))
+fit0 <- survfit(survobj~1, data=dat)
+```
+
+```{r}
+plot(fit0, xlab="Time at risk of loss of vision in Months",
+ylab="% not lost vision", yscale=100,
+main ="Survival Distribution (Overall)")
+```
+
+### 1. Survival distribution by laser
+```{r}
+#dat['inter'] = dat['laser'] * dat['trt']
+dat$laser_trt = paste(as.factor(dat$trt2),as.factor(dat$laser) )
+fitr <- survfit(survobj~ laser_trt, data=dat)
+plot(fitr, xlab="Time at risk of loss of vision in Months",
+ylab="% not lost vision", yscale=100,
+main="Survival Distribution by laser",
+col = c('red', 'blue','green','black'))
+legend('bottomleft', legend=levels(as.factor(dat$laser_trt)), col = c('red', 'blue','green', 'black'), lty=1)
+```
+### 2. Quantatitive analysis of the survival distribution by laser
+```{r}
+survdiff(survobj~laser, data=dat)
+```
+
+
+### 3. Survival Distrubution by age - graph
+
+```{r}
+summary(dat$age)
+```
+
+
+```{r}
+dat$agedist <- cut(dat$age, breaks=c(0,18,30,100))
+fitc <- survfit(survobj~agedist, data=dat)
+plot(fitc,xlab="Time at risk of loss of vision in Months",
+ylab="% not lost vision", yscale=100,
+main="Survival Distribution by age",
+col = c('orange', 'yellow', 'green'))
+legend('bottomleft', legend=levels(as.factor(dat$agedist)), col = c('orange', 'yellow', 'green'), lty=1)
+```
+
+### Survival distribution by clinical risk - graph
+
+```{r}
+summary(dat$risk)
+```
+
+```{r}
+dat$riskdist <- cut(dat$risk, breaks=c(5,8,10,12))
+fitr <- survfit(survobj~riskdist, data=dat)
+plot(fitr,xlab="Time at risk of loss of vision in Months",
+ylab="% not lost vision", yscale=100,
+main="Survival Distribution by clinical risk of diabetic retinopathy",
+col = c('yellow', 'green', 'purple'))
+legend('bottomleft', legend=levels(as.factor(dat$riskdist)), col = c('yellow', 'green', 'purple'), lty=1)
+```
+
+### More Quantatitive analysis
+
+```{r}
+model1 = coxph(survobj~laser * trt + age + risk , data=dat)
+summary(model1)
+```
+```{r}
+head(dat)
+```
+```{r}
+#dat$laser = relevel(as.factor(dat$laser), ref='argon')
+#coxph(survobj~laser, data=dat)
+```
+
+
+
+```{r}
+#coxph(survobj~agedist, data=dat)
+```
+```{r}
+#coxph(survobj~riskdist, data=dat)
+```
+
+### Check the interactino between variables
+
+```{r}
+#test.dat1 <- cox.zph(coxph(survobj~laser*age*risk, data=dat))
+#test.dat1
+```
+```{r}
+#test.dat2 <- cox.zph(coxph(survobj~laser*risk, data=dat))
+#test.dat2
+```

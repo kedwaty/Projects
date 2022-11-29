@@ -1,0 +1,153 @@
+
+```{r}
+library(tidyverse)
+library(twang)
+library(survey)
+```
+# 1. impact of absences on math final grades
+
+```{r}
+d1=read.table("student-mat.csv",sep=";",header=TRUE)
+d2=read.table("student-por.csv",sep=";",header=TRUE)
+
+d3=merge(d1,d2,by=c("school","sex","age","address","famsize","Pstatus","Medu","Fedu","Mjob","Fjob","reason","nursery","internet"))
+print(nrow(d3))
+```
+```{r}
+#G1.x + G2.x +  G3.x + studytime.x + higher_bin + absences.y + health.x
+summary(d3$G3.x) 
+sd(d3$G3.x) 
+summary(d3$absences.x)
+sd(d3$absences.x)
+summary(d3$G1.x)
+sd(d3$G1.x)
+summary(d3$studytime.x)
+sd(d3$studytime.x)
+summary(d3$higher_bin)
+sd(d3$higher_bin)
+summary(d3$absences.y)
+sd(d3$absences.y)
+summary(d3$health.x)
+sd(d3$health.x)
+```
+
+```{r}
+head(d3['G3.x'])
+```
+
+```{r}
+d3 = d3 %>% mutate(absences.0=ifelse(absences.x>0, 1 ,0), absences.3=ifelse(absences.x>3, 1 ,0), absences.8=ifelse(absences.x>8, 1 ,0))
+head(d3[c('absences.0','absences.3','absences.8')])
+```
+
+```{r}
+mean = d3 %>% filter(d3$absences.0 == 0) %>% select(G3.x) %>% colMeans()
+sd = d3 %>% filter(d3$absences.0 == 0) %>% select(G3.x) %>% var() %>% sqrt()
+round(mean,3)
+c(round(mean - 1.96*sd,3), round(mean + 1.96*sd,3))
+```
+
+```{r}
+chisq.test(d3$G3.x, d3$absences.0)
+chisq.test(d3$G3.x, d3$absences.3)
+chisq.test(d3$G3.x, d3$absences.8)
+```
+
+# 2. attributes that possibly contribute to absences
+
+```{r}
+colnames(d3)
+```
+
+We will test G1.x, G3.x, studytime.x, higher_bin, absences.y, health.x as a potential attributes that possibly contribute to absences.
+
+```{r}
+count(d3[d3$higher.x == 'no',])
+```
+
+```{r}
+d3 = d3 %>% mutate(higher_bin = ifelse(higher.x == 'no', 0, 1))
+boosted.mod_0 = ps(absences.0 ~ G1.x +  G3.x + studytime.x + higher_bin + absences.y + health.x,
+data=d3,
+estimand = "ATE",
+n.trees = 10000,
+interaction.depth=2,
+perm.test.iters=0,
+verbose=FALSE,
+stop.method = c("es.mean"))
+```
+
+```{r}
+boosted.mod_3 = ps(absences.3 ~ G1.x + G3.x + studytime.x + higher_bin + absences.y + health.x,
+data=d3,
+estimand = "ATE",
+n.trees = 10000,
+interaction.depth=2,
+perm.test.iters=0,
+verbose=FALSE,
+stop.method = c("es.mean"))
+```
+
+```{r}
+boosted.mod_8 = ps(absences.8 ~ G1.x +  G3.x + studytime.x + higher_bin + absences.y + health.x,
+data=d3,
+estimand = "ATE",
+n.trees = 10000,
+interaction.depth=2,
+perm.test.iters=0,
+verbose=FALSE,
+stop.method = c("es.mean"))
+```
+
+
+```{r}
+summary(boosted.mod_0)
+```
+
+```{r}
+summary(boosted.mod_0$gbm.obj, n.trees=boosted.mod_0$desc$es.mean.ATE$n.trees, plot=F)
+```
+
+```{r}
+d3$boosted_0 <- get.weights(boosted.mod_0)
+hist(d3$boosted_0)
+
+d3$boosted_3 <- get.weights(boosted.mod_3)
+hist(d3$boosted_3)
+
+d3$boosted_8 <- get.weights(boosted.mod_8)
+hist(d3$boosted_8)
+```
+
+```{r}
+plot(boosted.mod_0, plot=2)
+```
+
+```{r}
+bal.table(boosted.mod_0)
+```
+
+```{r}
+design_0 <- svydesign(ids=~1, weights=~boosted_0, data=d3)
+glm0 <- svyglm(absences.0 ~ G1.x + G3.x + studytime.x + higher_bin + absences.y + health.x, design=design_0)
+summary(glm0)
+round(glm0$coefficients,3)
+```
+
+```{r}
+design_3 <- svydesign(ids=~1, weights=~boosted_3, data=d3)
+glm3 <- svyglm(absences.3 ~ G1.x + G3.x + studytime.x + higher_bin + absences.y + health.x, design=design_3)
+summary(glm3)
+round(glm3$coefficients,3)
+```
+
+```{r}
+design_8 <- svydesign(ids=~1, weights=~boosted_8, data=d3)
+glm8 <- svyglm(absences.8 ~ G1.x + G3.x + studytime.x + higher_bin + absences.y + health.x, design=design_8)
+summary(glm8)
+round(glm8$coefficients,3)
+```
+
+```{r}
+cor(d3$G3.x, d3$absences.x)
+```

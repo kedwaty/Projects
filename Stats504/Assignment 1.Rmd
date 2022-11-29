@@ -1,0 +1,141 @@
+---
+title: "Assignment 1 Appendix"
+output: pdf_document
+---
+
+```{r}
+library(stats)
+library(ggplot2)
+library(MASS)
+```
+
+#1 Data skimming
+```{r}
+dero = read.csv(file = 'C:/Users/krss9/Desktop/FS21/Stats 504/derogatory.csv')
+head(dero)
+```
+
+#2 Converting categorical variables into numeric
+```{r}
+dero$card2 <- ifelse(dero$card == 'yes', 1,0)
+dero$owner2 <- ifelse(dero$owner == 'yes', 1, 0)
+dero$selfemp2 <- ifelse(dero$selfemp == 'yes', 1, 0)
+dero$majorcards2 <- ifelse(dero$majorcards == 'yes', 1, 0)
+```
+
+#3 glm with Poisson assumption
+```{r}
+expr1 = 'reports ~ age + income + expenditure + owner2 + selfemp2 + dependents + months + majorcards2 + active'
+model1_GLM = glm(expr1, family=poisson(), data=dero)
+summary(model1_GLM)
+```
+
+#4 Graphs of variables and reports
+
+```{r}
+boxplot(expenditure ~ reports, data=dero, main ="Expenditure per number of reports")
+```
+```{r}
+plot(owner2 ~ reports, data=dero, main ="Owner per number of reports")
+```
+
+```{r}
+ggplot(data = dero, aes(x = reports, y = owner2))+
+  geom_jitter(width = 0.1, height = 0.05) +
+  ggtitle("Home ownership per reports")
+
+```
+
+```{r}
+boxplot(months ~ reports, data=dero, main ="months per number of reports")
+```
+```{r}
+boxplot(active ~ reports, data=dero, main ="active per number of reports")
+```
+
+#5 Distribution of reports and missing values check
+```{r}
+dero_rep0 = dero[which(dero$reports == 0),]
+dim(dero_rep0)
+dero_rep1 = dero[which(dero$reports == 1),]
+dim(dero_rep1)
+dero_rep2 = dero[which(dero$reports > 1),]
+dim(dero_rep2)
+```
+
+```{r}
+which(is.na(dero))
+```
+
+#6 glm with four assumptions _ Guassian, Poisson, NB, Quasi
+
+```{r}
+expr1 = 'reports ~ age + income + expenditure + owner2 + selfemp2 + dependents + months + majorcards2 + active'
+model1_GLM = glm(expr1, family=poisson(), data=dero)
+summary(model1_GLM)
+```
+
+```{r}
+expr2 = 'reports ~ age + income + expenditure + owner2 + selfemp2 + dependents + months + majorcards2 + active'
+model2_GLM = glm.nb(expr2, data=dero)
+summary(model2_GLM)
+```
+
+```{r}
+expr3 = 'reports ~ age + income + expenditure + owner2 + selfemp2 + dependents + months + majorcards2 + active'
+model3_GLM = glm(expr3, family=gaussian(), data=dero)
+summary(model3_GLM)
+```
+
+```{r}
+expr4 = 'reports ~ age + income + expenditure + owner2 + selfemp2 + dependents + months + majorcards2 + active'
+model4_GLM = glm(expr4, family=quasi(), data=dero)
+summary(model4_GLM)
+```
+
+#7 Correlation table
+```{r}
+res <- cor(dero[,c(2,3,4,5,6,9,10,12,14,15,16)])
+as.data.frame(round(res, 3))
+```
+
+#8 glm with fewer variables
+```{r}
+expr_fin = 'reports ~ expenditure + owner2 + months + active'
+model5_GLM = glm(expr_fin, family = poisson(), data = dero)
+model6_GLM = glm.nb(expr_fin, data = dero)
+model7_GLM = glm(expr_fin, family = gaussian(), data = dero)
+model8_GLM = glm(expr_fin, family = quasi(), data = dero)
+```
+
+```{r}
+summary(model5_GLM)
+```
+
+```{r}
+summary(model6_GLM)
+```
+
+```{r}
+summary(model7_GLM)
+```
+
+```{r}
+summary(model8_GLM)
+```
+
+#9 AIC comparison
+```{r}
+AIC(model5_GLM)
+AIC(model6_GLM)
+AIC(model7_GLM)
+```
+
+#10 Summary of the selected model
+```{r}
+summary(model6_GLM)
+```
+
+```{r}
+summary(model6_GLM)$coefficients[,c(1,2,4)]
+```
